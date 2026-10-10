@@ -17,7 +17,7 @@ export function overlaps(aStart: number, aEnd: number, bStart: number, bEnd: num
   return aStart < bEnd && bStart < aEnd;
 }
 
-/** כל תחילות חצאי השעה בטווח [start, end) כך שהשיעור כולו נכנס */
+/** כל תחילות השיעור בטווח [start, end) בקפיצות של step, כך שהשיעור כולו נכנס */
 export function slotsInRange(start: number, end: number, step = LESSON_MINUTES): number[] {
   const out: number[] = [];
   const first = Math.ceil(start / step) * step;
@@ -25,5 +25,11 @@ export function slotsInRange(start: number, end: number, step = LESSON_MINUTES):
   return out;
 }
 
-/** אפשרויות שעה לטפסים */
-export const TIME_OPTIONS = slotsInRange(7 * 60, 22 * 60 + 30).map(fmt);
+/** שיעור יכול להתחיל בכל רבע שעה */
+export const START_STEP = 15;
+
+/** אפשרויות שעת התחלה לטפסים (ברבעי שעה) */
+export const TIME_OPTIONS = slotsInRange(7 * 60, 22 * 60 + 30, START_STEP).map(fmt);
+
+/** אפשרויות שעה ברבעי שעה (לשעות עבודה של מורים) */
+export const QUARTER_TIME_OPTIONS = Array.from({ length: (22 * 60 + 30 - 7 * 60) / 15 + 1 }, (_, i) => fmt(7 * 60 + i * 15));

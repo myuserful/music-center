@@ -1,0 +1,43 @@
+# גיבוי שבועי של מסד הנתונים (Supabase) לגוגל דרייב
+# ההגדרה הראשונית מוסברת ב-README, בסעיף "גיבוי שבועי".
+name: גיבוי שבועי
+
+on:
+  schedule:
+    - cron: '0 23 * * 3' # כל רביעי ב-23:00 UTC = לילה שבין רביעי לחמישי, 02:00 שעון ישראל
+  workflow_dispatch: # הרצה ידנית מלשונית Actions
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: התקנת pg_dump ו-rclone
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common rclone
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y -qq postgresql-client-17
+
+      - name: גיבוי מסד הנתונים
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          file="maktzev-$(TZ=Asia/Jerusalem date +%Y-%m-%d).sql.gz"
+          # כל הטבלאות של המערכת (מבנה + נתונים), בפורמט SQL שאפשר לשחזר ב-SQL Editor
+          /usr/lib/postgresql/17/bin/pg_dump "$DB_URL" --schema=public --no-owner --no-privileges | gzip -9 > "$file"
+          ls -lh "$file"
+          echo "FILE=$file" >> "$GITHUB_ENV"
+
+      - name: העלאה לגוגל דרייב
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+          FOLDER: 'gdrive:גיבויים - מקצב'
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$RCLONE_CONF" > rclone.conf
+          rclone --config rclone.conf copy "$FILE" "$FOLDER"
+          # שומרים גיבויים של 6 החודשים האחרונים
+          rclone --config rclone.conf delete "$FOLDER" --min-age 180d --include 'maktzev-*.sql.gz'
+          rclone --config rclone.conf ls "$FOLDER"

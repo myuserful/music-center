@@ -58,6 +58,30 @@ npm test
 
 ---
 
+## גיבוי שבועי
+
+כל לילה בין רביעי לחמישי (02:00) GitHub Actions מגבה את כל הטבלאות לקובץ `maktzev-YYYY-MM-DD.sql.gz`
+ומעלה אותו לתיקייה **"גיבויים - מקצב"** בגוגל דרייב של negina998877@gmail.com. גיבויים בני יותר מחצי שנה נמחקים.
+ההגדרה: [`.github/workflows/db-backup.yml`](.github/workflows/db-backup.yml).
+
+### הגדרה (פעם אחת)
+
+1. **כתובת מסד הנתונים:** ב-Supabase לוחצים **Connect**, בוחרים **Session pooler** ומעתיקים את ה-URI
+   (מחליפים את `[YOUR-PASSWORD]` בסיסמת מסד הנתונים).
+2. **חיבור לגוגל דרייב:** במחשב מריצים `winget install Rclone.Rclone`, פותחים טרמינל חדש ומריצים
+   `rclone config create gdrive drive scope=drive.file`. נפתח דפדפן: מתחברים עם **negina998877@gmail.com** ומאשרים.
+   אחר כך `rclone config show gdrive` מציג את ההגדרה (שורה `[gdrive]` והשורות שאחריה).
+3. **סודות ב-GitHub:** בריפו, **Settings > Secrets and variables > Actions > New repository secret**:
+   - `SUPABASE_DB_URL` - ה-URI משלב 1
+   - `RCLONE_CONF` - כל הפלט משלב 2, כולל השורה `[gdrive]`
+4. **בדיקה:** בלשונית **Actions** בוחרים "גיבוי שבועי" ולוחצים **Run workflow**. אחרי דקה-שתיים הקובץ מופיע בדרייב.
+   אם גיבוי נכשל, GitHub שולח מייל.
+
+### שחזור
+
+מחלצים את הקובץ (`.gz`), ובפרויקט Supabase **ריק** מדביקים את התוכן ב-SQL Editor ולוחצים Run
+(או: `psql "<URI>" -f maktzev-YYYY-MM-DD.sql`).
+
 ## כללי עסק עיקריים
 
 - השבוע: 0 = ראשון ... 5 = שישי (6 = שבת לא מוצג בלוח).

@@ -54,7 +54,7 @@ export default async function LessonPage({ params, searchParams }: { params: Pro
             תלמיד/ה
             <select name="student_id" defaultValue={l.student_id ?? ''} required>
               <option value="">בחירה...</option>
-              {all.students.filter((s) => s.active || s.id === l.student_id).map((s) => (
+              {all.students.filter((s) => s.status !== 'inactive' || s.id === l.student_id).map((s) => (
                 <option key={s.id} value={s.id}>{fullName(s)}</option>
               ))}
             </select>

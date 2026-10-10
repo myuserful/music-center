@@ -1,13 +1,19 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { BirthDateFields } from '@/components/BirthDateFields';
 import { ConfirmButton } from '@/components/ConfirmButton';
+import { HealthFundFields } from '@/components/HealthFundFields';
+import { StudentPayments } from '@/components/StudentPayments';
 import { BackLink, Empty, Flash, PageHead, StatusActions, StatusBadge, type SP } from '@/components/ui';
 import {
   addEnrollment, deleteEnrollment, deleteLesson, setEnrollmentStatus, setLessonStatus,
 } from '@/lib/actions/assignments';
 import { deleteContact, deleteStudent, saveContact, saveStudent } from '@/lib/actions/people';
-import { CHOIR_CAPACITY, DAYS, STATUS_LABELS, STATUSES } from '@/lib/constants';
-import { loadAll } from '@/lib/data';
+import {
+  CHOIR_CAPACITY, DAYS, DEFAULT_LANGUAGE, LANGUAGES, GENDER_LABELS, PAYMENT_TRACK_LABELS, PAYMENT_TRACKS, STATUS_LABELS, STATUSES,
+  STUDENT_STATUS_LABELS, STUDENT_STATUSES, type Gender,
+} from '@/lib/constants';
+import { loadAll, loadBilling } from '@/lib/data';
 import { createClient } from '@/lib/supabase/server';
 import { hhmm } from '@/lib/time';
 import { fullName, type Student } from '@/lib/types';
@@ -19,9 +25,15 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
   const { maps } = all;
   const isNew = id === 'new';
   const s: Student | undefined = isNew
-    ? { id: 0, first_name: '', last_name: '', grade: '', birth_date: null, branch_id: null, requested_instrument_id: null, notes: '', active: true }
+    ? {
+      id: 0, first_name: '', last_name: '', school: '', birth_date: null, birth_date_approx: false, branch_id: null,
+      requested_instrument_id: null, notes: '', status: 'active', gender: null, health_fund: null, health_plan: '',
+      id_number: '', has_referral: false, hmo_reported: false, preferred_times: '', language: DEFAULT_LANGUAGE,
+      payment_track: 'unknown', standing_order: false,
+    }
     : maps.student.get(Number(id));
   if (!s) notFound();
+  const billing = isNew ? null : await loadBilling(db, s.id);
 
   const here = `/students/${s.id}`;
   const contacts = all.contacts.filter((c) => c.student_id === s.id);
@@ -35,7 +47,7 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
   return (
     <>
       <BackLink href="/students">כל התלמידים</BackLink>
-      <PageHead title={isNew ? 'תלמיד/ה חדש/ה' : fullName(s)}>
+      <PageHead title={isNew ? 'תלמיד/ה חדש/ה' : fullName(s)} sub={isNew ? undefined : STUDENT_STATUS_LABELS[s.status]}>
         {!isNew && <Link className="btn btn-primary" href={`/lessons/new?student=${s.id}`}>+ שיבוץ שיעור</Link>}
       </PageHead>
       <Flash sp={sp} />
@@ -45,8 +57,29 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
         <div className="form-grid">
           <label>שם פרטי<input name="first_name" defaultValue={s.first_name} required /></label>
           <label>שם משפחה<input name="last_name" defaultValue={s.last_name} required /></label>
-          <label>כיתה<input name="grade" defaultValue={s.grade} placeholder="למשל ג'" /></label>
-          <label>תאריך לידה<input name="birth_date" type="date" defaultValue={s.birth_date ?? ''} /></label>
+          <label>
+            סטטוס
+            <select name="status" defaultValue={s.status}>
+              {STUDENT_STATUSES.map((x) => <option key={x} value={x}>{STUDENT_STATUS_LABELS[x]}</option>)}
+            </select>
+          </label>
+          <label>
+            מין
+            <select name="gender" defaultValue={s.gender ?? ''}>
+              <option value="">לא נבחר</option>
+              {(Object.keys(GENDER_LABELS) as Gender[]).map((g) => <option key={g} value={g}>{GENDER_LABELS[g]}</option>)}
+            </select>
+          </label>
+          <label>ת&quot;ז<input name="id_number" defaultValue={s.id_number} dir="ltr" inputMode="numeric" /></label>
+          <label>מקום לימודים<input name="school" defaultValue={s.school} placeholder="בית ספר / גן" /></label>
+          <label>
+            שפה
+            <input name="language" list="language-options" defaultValue={s.language} />
+            <datalist id="language-options">
+              {LANGUAGES.map((l) => <option key={l} value={l} />)}
+            </datalist>
+          </label>
+          <BirthDateFields birthDate={s.birth_date} approx={s.birth_date_approx} />
           <label>
             סניף
             <select name="branch_id" defaultValue={s.branch_id ?? ''}>
@@ -61,7 +94,17 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
               {all.instruments.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
             </select>
           </label>
-          <label className="check"><input type="checkbox" name="active" defaultChecked={s.active} /> פעיל/ה</label>
+          <HealthFundFields fund={s.health_fund} plan={s.health_plan} />
+          <label className="check"><input type="checkbox" name="has_referral" defaultChecked={s.has_referral} /> יש הפניה</label>
+          <label className="check"><input type="checkbox" name="hmo_reported" defaultChecked={s.hmo_reported} /> עודכן/ה בקופה</label>
+          <label>
+            מסלול תשלום
+            <select name="payment_track" defaultValue={s.payment_track}>
+              {PAYMENT_TRACKS.map((t) => <option key={t} value={t}>{PAYMENT_TRACK_LABELS[t]}</option>)}
+            </select>
+          </label>
+          <label className="check"><input type="checkbox" name="standing_order" defaultChecked={s.standing_order} /> הוראת קבע</label>
+          <label className="wide">העדפות שעה<input name="preferred_times" defaultValue={s.preferred_times} placeholder="למשל: שני מ-4:00 עד 6:00, אחרי 5:30" /></label>
           {isNew && (
             <>
               <label className="wide" style={{ marginTop: 6 }}>איש קשר ראשי (אופציונלי)</label>
@@ -132,6 +175,8 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
               )}
             </section>
           </div>
+
+          <StudentPayments student={s} charges={billing!.charges} payments={billing!.payments} />
 
           <section className="card">
             <h2>אנשי קשר</h2>

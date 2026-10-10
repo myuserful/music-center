@@ -27,7 +27,7 @@ export default async function ChoirPage({ params, searchParams }: { params: Prom
   const here = `/choirs/${id}`;
   const members = all.enrollments.filter((e) => e.choir_id === c.id);
   const memberIds = new Set(members.map((e) => e.student_id));
-  const candidates = all.students.filter((s) => s.active && !memberIds.has(s.id));
+  const candidates = all.students.filter((s) => s.status !== 'inactive' && !memberIds.has(s.id));
   const full = members.length >= CHOIR_CAPACITY;
 
   return (
@@ -73,6 +73,10 @@ export default async function ChoirPage({ params, searchParams }: { params: Prom
               {TIME_OPTIONS.map((x) => <option key={x}>{x}</option>)}
             </select>
           </label>
+          <label>מחיר פרטי לחודש<input name="price_private" type="number" min="0" defaultValue={c.price_private ?? ''} /></label>
+          <label>מכבי: חלק 1<input name="price_maccabi_1" type="number" min="0" defaultValue={c.price_maccabi_1 ?? ''} /></label>
+          <label>מכבי: חלק 2 (אחרי החזר)<input name="price_maccabi_2" type="number" min="0" defaultValue={c.price_maccabi_2 ?? ''} /></label>
+          <label>התחייבויות בחודש<input name="commitments" type="number" min="0" defaultValue={c.commitments ?? ''} /></label>
           <label className="wide">הערות<textarea name="notes" defaultValue={c.notes} /></label>
         </div>
         {choirTeachers.length === 0 && (

@@ -1,10 +1,10 @@
 import Link from 'next/link';
 import { Flash, one, PageHead, type SP } from '@/components/ui';
-import { withinHours } from '@/lib/availability';
+import { freeSlots } from '@/lib/availability';
 import { BOARD_DAYS, DAYS, LESSON_MINUTES } from '@/lib/constants';
 import { loadAll } from '@/lib/data';
 import { createClient } from '@/lib/supabase/server';
-import { fmt, hhmm, overlaps, toMin } from '@/lib/time';
+import { fmt, hhmm, overlaps, START_STEP, toMin } from '@/lib/time';
 import { fullName } from '@/lib/types';
 
 export default async function SchedulePage({ searchParams }: { searchParams: SP }) {
@@ -28,10 +28,15 @@ export default async function SchedulePage({ searchParams }: { searchParams: SP 
     ...choirs.flatMap((c) => [toMin(c.start_time), toMin(c.end_time) - LESSON_MINUTES]),
     ...(teacher ? hours : all.hours).flatMap((h) => [toMin(h.start_time), toMin(h.end_time) - LESSON_MINUTES]),
   ];
-  const from = Math.floor(Math.min(14 * 60, ...times) / 30) * 30;
+  // שורות של חצי שעה, או רבע שעה כשיש שעות/שיעורים שמתחילים ברבע
+  const step = times.every((t) => t % 30 === 0) ? 30 : START_STEP;
+  const from = Math.floor(Math.min(14 * 60, ...times) / step) * step;
   const to = Math.max(19 * 60 + 30, ...times);
   const rows: number[] = [];
-  for (let m = from; m <= to; m += 30) rows.push(m);
+  for (let m = from; m <= to; m += step) rows.push(m);
+
+  // במבט מורה: המקומות הפנויים (שיעורים ברצף מתחילת שעות העבודה)
+  const free = teacher ? all.teacherFree(teacher.id) : [];
 
   return (
     <>
@@ -71,19 +76,23 @@ export default async function SchedulePage({ searchParams }: { searchParams: SP 
               <tr key={m}>
                 <td className="time">{fmt(m)}</td>
                 {BOARD_DAYS.map((d) => {
-                  const here = lessons.filter((l) => l.weekday === d && toMin(l.start_time) === m);
+                  const inRow = (t: number) => t >= m && t < m + step;
+                  const here = lessons.filter((l) => l.weekday === d && inRow(toMin(l.start_time)));
                   const choirHere = choirs.filter(
-                    (c) => c.weekday === d && overlaps(m, m + 30, toMin(c.start_time), toMin(c.end_time)),
+                    (c) => c.weekday === d && overlaps(m, m + step, toMin(c.start_time), toMin(c.end_time)),
                   );
-                  const working = teacher && withinHours(hours, d, m);
-                  const isFree = working && here.length === 0 && choirHere.length === 0;
-                  const cls = teacher ? (isFree ? 'free' : working ? '' : 'off') : '';
+                  const freeHere = free.filter((f) => f.weekday === d && inRow(f.start));
+                  const working = !!teacher && hours.some(
+                    (h) => h.weekday === d && toMin(h.start_time) <= m && m + step <= toMin(h.end_time),
+                  );
+                  const cls = teacher ? (freeHere.length ? 'free' : working ? '' : 'off') : '';
                   return (
                     <td key={d} className={cls}>
                       {here.map((l) => (
                         <Link key={l.id} href={`/lessons/${l.id}`} className={`slot slot-${l.status}`}>
                           {fullName(maps.student.get(l.student_id))}
                           <small>
+                            {toMin(l.start_time) !== m && `${hhmm(l.start_time)} · `}
                             {maps.instrument.get(l.instrument_id)?.name}
                             {teacher ? ` · ${maps.room.get(l.room_id)?.name}` : ` · ${maps.teacher.get(l.teacher_id)?.first_name}`}
                           </small>
@@ -97,9 +106,11 @@ export default async function SchedulePage({ searchParams }: { searchParams: SP 
                           )}
                         </Link>
                       ))}
-                      {isFree && (
-                        <Link href={`/lessons/new?teacher=${teacher!.id}&day=${d}&time=${fmt(m)}`}>+ פנוי</Link>
-                      )}
+                      {freeHere.map((f) => (
+                        <Link key={f.start} href={`/lessons/new?teacher=${teacher!.id}&day=${d}&time=${fmt(f.start)}`}>
+                          + פנוי {fmt(f.start)}
+                        </Link>
+                      ))}
                     </td>
                   );
                 })}

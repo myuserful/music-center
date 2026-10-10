@@ -5,9 +5,12 @@ import { usePathname } from 'next/navigation';
 
 const LINKS = [
   { href: '/', label: 'מסך ראשי', icon: '◉' },
+  { href: '/assign', label: 'שיבוץ בגרירה', icon: '⇄' },
+  { href: '/tasks', label: 'משימות', icon: '☑' },
   { href: '/schedule', label: 'לוח שיעורים', icon: '▦' },
   { href: '/tracking', label: 'מעקב שיבוץ', icon: '✓' },
   { href: '/students', label: 'תלמידים', icon: '☺' },
+  { href: '/payments', label: 'תשלומים', icon: '₪' },
   { href: '/teachers', label: 'מורים', icon: '♪' },
   { href: '/choirs', label: 'מקהלות', icon: '♫' },
   { href: '/branches', label: 'סניפים וחדרים', icon: '⌂' },

@@ -4,18 +4,20 @@ import { LESSON_MINUTES } from './constants';
 import { toMin } from './time';
 import type { DB } from './supabase/server';
 import type {
-  Branch, Choir, Contact, Enrollment, Instrument, Lesson, Room, Student, Teacher, TeacherHours,
+  BillingSettings, Branch, Charge, Choir, Contact, Enrollment, FundRate, Instrument, Lesson, Payment, Room, Student,
+  Teacher, TeacherHours,
 } from './types';
 
 /** טוען את כל נתוני המערכת. מרכז מוזיקה הוא בהיקף של מאות רשומות, אז זה פשוט ומהיר. */
 export async function loadAll(db: DB) {
-  const [branches, rooms, instruments, teachers, ti, hours, students, contacts, lessons, choirs, enrollments] =
+  const [branches, rooms, instruments, teachers, ti, tb, hours, students, contacts, lessons, choirs, enrollments] =
     await Promise.all([
       db.from('branches').select('*').order('name'),
       db.from('rooms').select('*').order('name'),
       db.from('instruments').select('*').order('name'),
       db.from('teachers').select('*').order('first_name'),
       db.from('teacher_instruments').select('*'),
+      db.from('teacher_branches').select('*'),
       db.from('teacher_hours').select('*').order('weekday').order('start_time'),
       db.from('students').select('*').order('first_name'),
       db.from('contacts').select('*').order('is_primary', { ascending: false }),
@@ -24,7 +26,7 @@ export async function loadAll(db: DB) {
       db.from('choir_enrollments').select('*').order('created_at'),
     ]);
 
-  const firstError = [branches, rooms, instruments, teachers, ti, hours, students, contacts, lessons, choirs, enrollments]
+  const firstError = [branches, rooms, instruments, teachers, ti, tb, hours, students, contacts, lessons, choirs, enrollments]
     .find((r) => r.error)?.error;
   if (firstError) throw new Error(firstError.message);
 
@@ -34,6 +36,7 @@ export async function loadAll(db: DB) {
     instruments: instruments.data as Instrument[],
     teachers: teachers.data as Teacher[],
     teacherInstruments: ti.data as { teacher_id: number; instrument_id: number }[],
+    teacherBranches: tb.data as { teacher_id: number; branch_id: number }[],
     hours: hours.data as TeacherHours[],
     students: students.data as Student[],
     contacts: contacts.data as Contact[],
@@ -59,6 +62,8 @@ export async function loadAll(db: DB) {
   const primaryContact = (studentId: number) => data.contacts.find((c) => c.student_id === studentId);
   const teacherInstrumentIds = (teacherId: number) =>
     data.teacherInstruments.filter((x) => x.teacher_id === teacherId).map((x) => x.instrument_id);
+  const teacherBranchIds = (teacherId: number) =>
+    data.teacherBranches.filter((x) => x.teacher_id === teacherId).map((x) => x.branch_id);
 
   /** זמנים תפוסים של מורה (שיעורים + מקהלות) */
   const teacherBusy = (teacherId: number): Busy[] => [
@@ -74,9 +79,29 @@ export async function loadAll(db: DB) {
     ...data.lessons.map((l) => l.student_id),
     ...data.enrollments.map((e) => e.student_id),
   ]);
-  const unassigned = data.students.filter((s) => s.active && !assignedStudentIds.has(s.id));
+  const unassigned = data.students.filter((s) => s.status === 'active' && !assignedStudentIds.has(s.id));
 
-  return { ...data, maps, roomLabel, primaryContact, teacherInstrumentIds, teacherFree, unassigned };
+  return { ...data, maps, roomLabel, primaryContact, teacherInstrumentIds, teacherBranchIds, teacherFree, unassigned };
 }
 
 export type All = Awaited<ReturnType<typeof loadAll>>;
+
+/** נתוני תשלומים. studentId מצמצם לתלמיד אחד */
+export async function loadBilling(db: DB, studentId?: number) {
+  const charges = db.from('charges').select('*').order('month', { ascending: false }).order('id');
+  const payments = db.from('payments').select('*').order('paid_on', { ascending: false }).order('id', { ascending: false });
+  const [settings, rates, c, p] = await Promise.all([
+    db.from('billing_settings').select('*').single(),
+    db.from('fund_rates').select('*'),
+    studentId ? charges.eq('student_id', studentId) : charges,
+    studentId ? payments.eq('student_id', studentId) : payments,
+  ]);
+  const firstError = [settings, rates, c, p].find((r) => r.error)?.error;
+  if (firstError) throw new Error(firstError.message);
+  return {
+    settings: settings.data as BillingSettings,
+    rates: rates.data as FundRate[],
+    charges: c.data as Charge[],
+    payments: p.data as Payment[],
+  };
+}

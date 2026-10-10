@@ -8,6 +8,10 @@ export function num(fd: FormData, k: string): number | null {
   return v === '' || Number.isNaN(Number(v)) ? null : Number(v);
 }
 
+/** ערך מתוך רשימה סגורה, אחרת null */
+export const oneOf = <T extends string>(v: string, options: T[]): T | null =>
+  (options as string[]).includes(v) ? (v as T) : null;
+
 export function status(fd: FormData): Status {
   const s = str(fd, 'status') as Status;
   return STATUSES.includes(s) ? s : 'pending';

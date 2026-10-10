@@ -1,18 +1,29 @@
 'use server';
 
+import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { createClient } from '../supabase/server';
 import { dbMessage, done, fail, num, str } from './util';
 
-const loginDomain = () => process.env.NEXT_PUBLIC_LOGIN_DOMAIN || 'staff.maktzev';
-
+/** כניסה בקישור למייל. רק משתמשות שהוגדרו ב-Supabase יכולות להיכנס. */
 export async function login(fd: FormData) {
-  const user = str(fd, 'username');
-  const email = user.includes('@') ? user : `${user}@${loginDomain()}`;
+  const email = str(fd, 'email').toLowerCase();
+  if (!email.includes('@')) fail('/login', 'יש להזין כתובת מייל');
+
+  const h = await headers();
+  const origin = h.get('origin') ?? `${h.get('x-forwarded-proto') ?? 'https'}://${h.get('host')}`;
   const db = await createClient();
-  const { error } = await db.auth.signInWithPassword({ email, password: String(fd.get('password') ?? '') });
-  if (error) fail('/login', 'שם משתמש או סיסמה שגויים');
-  redirect('/');
+  const { error } = await db.auth.signInWithOtp({
+    email,
+    options: { shouldCreateUser: false, emailRedirectTo: `${origin}/auth/callback` },
+  });
+  if (error) {
+    if (/signups not allowed|not found/i.test(error.message)) fail('/login', 'המייל הזה לא רשום במערכת');
+    if (/rate limit|security purposes/i.test(error.message))
+      fail('/login', 'נשלחו יותר מדי מיילים. נסי שוב בעוד כמה דקות.');
+    fail('/login', `שגיאה בשליחת המייל: ${error.message}`);
+  }
+  done('/login', 'שלחנו לך קישור כניסה למייל. פתחי אותו בדפדפן הזה.');
 }
 
 export async function logout() {
