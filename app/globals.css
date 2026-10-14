@@ -463,6 +463,7 @@ tr.inactive td { opacity: 0.5; }
 .badge-student-active { background: var(--confirmed-bg); color: var(--confirmed); }
 .badge-student-undecided { background: var(--undecided-bg); color: var(--undecided); }
 .badge-student-inactive { background: #efeef5; color: var(--muted); }
+.badge-review { background: var(--undecided-bg); color: var(--undecided); }
 
 /* ---- שיבוץ בגרירה ---- */
 .assign { display: grid; grid-template-columns: 320px 1fr; gap: 18px; align-items: start; }
@@ -483,6 +484,8 @@ tr.inactive td { opacity: 0.5; }
 .student-card.undecided { border-inline-start-color: var(--undecided); }
 .student-card.picked { outline: 3px solid var(--brand); background: var(--brand-soft); }
 .student-card-top { display: flex; justify-content: space-between; gap: 8px; }
+.student-card-name { font-weight: 700; color: var(--ink); }
+.student-card-name:hover { color: var(--brand); text-decoration: underline; }
 .student-card-tags { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 4px; align-items: center; }
 .student-card-note { font-size: 0.8rem; color: var(--muted); margin-top: 4px; white-space: pre-line; }
 .chip-plain { background: #f1f0f6; color: var(--muted); }
@@ -589,6 +592,23 @@ tr.inactive td { opacity: 0.5; }
 .task-who-shevi { background: var(--coral-soft); color: #b8432f; }
 .task-who-both { background: var(--mint-soft); color: var(--mint-dark); }
 
+/* ---- טלפונים להורים ---- */
+.kanban-calls { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.kanban-call-to_call { border-top-color: var(--blue); }
+.kanban-call-no_answer { border-top-color: var(--coral); }
+.kanban-call-undecided { border-top-color: var(--pending); }
+.kanban-call-confirmed { border-top-color: var(--confirmed); }
+.kanban-col.over { background: var(--brand-soft); }
+.call-search { max-width: 280px; }
+.call-items { list-style: none; margin: 6px 0 0; padding: 0; font-size: 0.82rem; color: var(--ink); }
+.call-items li { display: flex; gap: 6px; align-items: baseline; }
+.call-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--pending); }
+.call-dot.dot-undecided { background: var(--undecided); }
+.call-dot.dot-confirmed { background: var(--confirmed); }
+.call-phone { margin: 6px 0 0; font-size: 0.84rem; }
+.call-card .task-due { display: block; margin-top: 4px; }
+@media (max-width: 1200px) { .kanban-calls { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
 @media (max-width: 860px) {
   .kanban { grid-template-columns: 1fr; }
 }
@@ -624,3 +644,46 @@ tr.inactive td { opacity: 0.5; }
 .dash-head h2 { margin: 0; }
 .dash-filter { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .dash-filter select { padding: 5px 8px; font-size: 0.85rem; }
+
+/* הזזת שיעור בלוח הגרירה */
+.slot-movable { cursor: grab; }
+.slot-movable:active { cursor: grabbing; }
+.slot-movable.moving { opacity: 0.45; }
+.slot-movable a { display: block; color: var(--ink); }
+.slot-movable a:first-child:hover { text-decoration: underline; color: var(--brand); }
+.slot-movable a small { color: var(--muted); }
+
+/* ---- הכנסות והוצאות ---- */
+.fin-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; margin-bottom: 18px; }
+.fin-new { padding: 14px 18px; margin: 0; }
+.fin-new[open] { flex-basis: 100%; }
+.fin-new > summary { list-style: none; width: fit-content; }
+.fin-new > summary::-webkit-details-marker { display: none; }
+.fin-new[open] > summary { margin-bottom: 16px; }
+.fin-income { background: var(--mint-soft); color: var(--mint-dark); }
+.fin-expense { background: var(--coral-soft); color: #b8432f; }
+.fin-cats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.fin-cat-top { display: flex; justify-content: space-between; gap: 8px; font-size: 0.9rem; }
+.fin-bar { height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; margin-top: 4px; }
+.fin-bar span { display: block; height: 100%; border-radius: 999px; }
+.fin-bar-income { background: var(--mint); }
+.fin-bar-expense { background: var(--coral); }
+.fin-salary { display: flex; gap: 6px; align-items: center; }
+.fin-salary input[type="number"] { width: 110px; }
+.fin-paid { color: var(--confirmed); }
+.fin-neg { color: var(--danger); font-weight: 600; }
+.fin-current td { background: var(--brand-soft); }
+.fin-receipt { display: flex; flex-direction: column; gap: 6px; }
+.fin-receipt input[type="file"] { padding: 8px; border: 1px dashed var(--line); border-radius: var(--radius-sm); background: var(--bg); }
+.fin-receipt-current { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+.fin-clip { display: inline-block; margin-top: 2px; font-size: 0.8rem; white-space: nowrap; }
+
+/* ---- טעינה ---- */
+.skeleton { background: linear-gradient(90deg, var(--line) 25%, #f0f2f7 50%, var(--line) 75%); background-size: 200% 100%; animation: shimmer 1.2s infinite linear; border-radius: var(--radius-sm); }
+.skeleton-title { height: 30px; width: 220px; margin-bottom: 10px; }
+.skeleton-sub { height: 14px; width: 320px; max-width: 100%; margin-bottom: 24px; }
+.skeleton-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin-bottom: 18px; }
+.skeleton-tile { height: 96px; border-radius: var(--radius); }
+.skeleton-card { height: 320px; border-radius: var(--radius); }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }

@@ -1,6 +1,6 @@
 import type {
-  Assignee, ChargeState, CheckStatus, Gender, HealthFund, Interest, PaymentMethod, PaymentTrack, Status, StudentStatus,
-  TaskStatus, TeacherGender,
+  Assignee, CallState, ChargeState, CheckStatus, Gender, HealthFund, Interest, PaymentMethod, PaymentTrack, Status, StudentStatus,
+  TaskStatus, TeacherGender, TxKind, TxMethod,
 } from './constants';
 
 export type Branch = { id: number; name: string; address: string };
@@ -18,7 +18,8 @@ export type Student = {
   branch_id: number | null; requested_instrument_id: number | null; notes: string; status: StudentStatus;
   gender: Gender | null; health_fund: HealthFund | null; health_plan: string; id_number: string;
   has_referral: boolean; hmo_reported: boolean; preferred_times: string; language: string;
-  payment_track: PaymentTrack; standing_order: boolean;
+  payment_track: PaymentTrack; standing_order: boolean; needs_review: boolean;
+  call_state: CallState; call_attempts: number; last_call_at: string | null;
 };
 export type Contact = {
   id: number; student_id: number; name: string; relation: string; phone: string; email: string; is_primary: boolean;
@@ -36,6 +37,12 @@ export type Enrollment = { id: number; choir_id: number; student_id: number; sta
 export type Task = {
   id: number; title: string; due_date: string | null; kind: string; description: string;
   assignee: Assignee; status: TaskStatus; position: number; created_at: string;
+};
+
+export type Transaction = {
+  id: number; kind: TxKind; occurred_on: string; amount: number; category: string; counterparty: string;
+  teacher_id: number | null; method: TxMethod; reference: string; recurring: boolean; notes: string;
+  receipt_path: string | null; receipt_name: string;
 };
 
 export type BillingSettings = {

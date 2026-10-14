@@ -14,13 +14,16 @@ export type QuickAssignResult = { ok: true; message: string } | { ok: false; err
  * חדר לשיעור: החדר הקבוע של המורה, ואם אין - חדר פנוי באותה שעה
  * בסניף של התלמיד/ה (אם המורה מלמד/ת שם) או באחד הסניפים של המורה.
  */
-async function pickRoom(db: Awaited<ReturnType<typeof createClient>>, teacherId: number, studentId: number, weekday: number, start: string) {
+async function pickRoom(
+  db: Awaited<ReturnType<typeof createClient>>, teacherId: number, studentId: number, weekday: number, start: string,
+  excludeLessonId = -1,
+) {
   const [{ data: teacher }, { data: student }, { data: tb }, { data: rooms }, { data: busy }, { data: choirs }] = await Promise.all([
     db.from('teachers').select('room_id').eq('id', teacherId).single(),
     db.from('students').select('branch_id').eq('id', studentId).single(),
     db.from('teacher_branches').select('branch_id').eq('teacher_id', teacherId),
     db.from('rooms').select('id,branch_id').order('name'),
-    db.from('lessons').select('room_id').eq('weekday', weekday).eq('start_time', start),
+    db.from('lessons').select('room_id').eq('weekday', weekday).eq('start_time', start).neq('id', excludeLessonId),
     db.from('choirs').select('room_id,start_time,end_time').eq('weekday', weekday),
   ]);
   if (teacher?.room_id) return teacher.room_id as number;
@@ -60,6 +63,27 @@ export async function quickAssign(input: {
   const { error } = await db.from('lessons').insert(row);
   if (error) return { ok: false, error: dbMessage(error) };
   return { ok: true, message: 'השיעור שובץ (ממתין לאישור הורים)' };
+}
+
+/** הזזת שיעור בלוח הגרירה: לשעה אחרת ו/או למורה אחר/ת. הסטטוס נשמר, החדר נבחר מחדש. */
+export async function moveLesson(id: number, input: {
+  teacher_id: number; instrument_id: number; weekday: number; start_time: string;
+}): Promise<QuickAssignResult> {
+  const db = await createClient();
+  const { data: lesson } = await db.from('lessons').select('student_id').eq('id', id).single();
+  if (!lesson) return { ok: false, error: 'השיעור לא נמצא' };
+
+  const roomId = await pickRoom(db, input.teacher_id, lesson.student_id, input.weekday, input.start_time, id);
+  if (!roomId) {
+    return { ok: false, error: 'אין חדר פנוי בשעה זו בסניפים של המורה. אפשר להגדיר למורה חדר קבוע או סניף.' };
+  }
+  const row = { ...input, student_id: lesson.student_id as number, room_id: roomId };
+  const err = await validateLesson(db, row, id);
+  if (err) return { ok: false, error: err };
+
+  const { error } = await db.from('lessons').update(row).eq('id', id);
+  if (error) return { ok: false, error: dbMessage(error) };
+  return { ok: true, message: 'השיעור הועבר' };
 }
 
 export async function saveLesson(fd: FormData) {

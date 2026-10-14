@@ -13,7 +13,7 @@ import { fullName } from '@/lib/types';
 export default async function StudentsPage({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
   const f = studentFilters(sp);
-  const { q, branch, gender, status } = f;
+  const { q, branch, gender, status, review } = f;
   const db = await createClient();
   const all = await loadAll(db);
   const { maps } = all;
@@ -52,13 +52,14 @@ export default async function StudentsPage({ searchParams }: { searchParams: SP 
             <option value="all">הכל</option>
           </select>
         </label>
+        <label className="check"><input type="checkbox" name="review" value="1" defaultChecked={review} /> רק לבדיקה</label>
         <button className="btn">סינון</button>
       </form>
 
       <section className="card table-wrap">
         {students.length === 0 ? <Empty>לא נמצאו תלמידים</Empty> : (
           <table>
-            <thead><tr><th>שם</th><th>סטטוס</th><th>גיל</th><th>מקום לימודים</th><th>סניף</th><th>קופה</th><th>איש קשר</th><th>שיבוצים</th></tr></thead>
+            <thead><tr><th>שם</th><th>סטטוס</th><th>גיל</th><th>מקום לימודים</th><th>סניף</th><th>קופה</th><th>איש קשר</th><th>שיבוצים</th><th>בדיקה</th></tr></thead>
             <tbody>
               {students.map((s) => {
                 const c = all.primaryContact(s.id);
@@ -66,7 +67,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: SP 
                 const enr = all.enrollments.filter((e) => e.student_id === s.id);
                 return (
                   <tr key={s.id} className={s.status === 'inactive' ? 'inactive' : ''}>
-                    <td><Link href={`/students/${s.id}`}><strong>{fullName(s)}</strong></Link>
+                    <td><Link href={`/students/${s.id}`}><strong>{fullName(s) || '(ללא שם)'}</strong></Link>
                       {s.language && s.language !== DEFAULT_LANGUAGE && <div className="muted">{s.language}</div>}
                     </td>
                     <td><span className={`badge badge-student-${s.status}`}>{STUDENT_STATUS_LABELS[s.status]}</span></td>
@@ -89,6 +90,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: SP 
                         <div key={`e${e.id}`}>{maps.choir.get(e.choir_id)?.name} <StatusBadge status={e.status} /></div>
                       ))}
                     </td>
+                    <td>{s.needs_review ? <span className="badge badge-review">לבדיקה</span> : <span className="muted">מאומת</span>}</td>
                   </tr>
                 );
               })}

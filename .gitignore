@@ -9,3 +9,7 @@ next-env.d.ts
 # ייבוא חד-פעמי עם פרטים אישיים (ה-repo ציבורי)
 supabase/migrations/0004_import_students.sql
 supabase/migrations/0006_import_teachers.sql
+supabase/migrations/0012_needs_review.sql
+supabase/migrations/0013_review_only_handwritten.sql
+supabase/migrations/0014_dictated_updates.sql
+supabase/migrations/00*_dictated_students*.sql

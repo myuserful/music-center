@@ -43,5 +43,6 @@ export async function GET(req: NextRequest) {
     { header: 'העדפות שעה', width: 24, value: (s) => s.preferred_times },
     { header: 'שיבוצים', width: 36, value: assignments },
     { header: 'הערות', width: 40, value: (s) => s.notes },
+    { header: 'לבדיקה', width: 10, value: (s) => yesNo(s.needs_review) },
   ], students);
 }

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
-import { quickAssign } from '@/lib/actions/assignments';
+import { moveLesson, quickAssign } from '@/lib/actions/assignments';
 import { DAYS, STATUS_LABELS, type Status } from '@/lib/constants';
 import { teacherGrid } from '@/lib/grid';
 import { fmt } from '@/lib/time';
@@ -12,7 +12,10 @@ export type BoardTeacher = {
   id: number; name: string; room: string; branches: string[]; languages: string[];
   instruments: { id: number; name: string }[];
   hours: { weekday: number; start: number; end: number }[];
-  lessons: { id: number; weekday: number; start: number; status: Status; student: string; instrument: string }[];
+  lessons: {
+    id: number; weekday: number; start: number; status: Status;
+    studentId: number; student: string; instrumentId: number; instrument: string;
+  }[];
   choirs: { id: number; name: string; weekday: number; start: number; end: number }[];
 };
 
@@ -23,7 +26,11 @@ export type BoardStudent = {
   preferred: string; notes: string; lessons: number; unassigned: boolean;
 };
 
-type Drop = { student: BoardStudent; teacher: BoardTeacher; weekday: number; start: number };
+type Drop = {
+  student: Pick<BoardStudent, 'id' | 'name' | 'instrumentId'>; teacher: BoardTeacher; weekday: number; start: number;
+  lessonId?: number; // הזזת שיעור קיים (במקום שיבוץ חדש)
+};
+type MovingLesson = BoardTeacher['lessons'][number] & { teacherId: number };
 type Toast = { ok: boolean; text: string };
 
 export function AssignBoard({
@@ -39,6 +46,7 @@ export function AssignBoard({
   const [fLanguage, setFLanguage] = useState('');
   const [picked, setPicked] = useState<BoardStudent | null>(null); // בחירה בלחיצה (במקום גרירה)
   const [dragging, setDragging] = useState<BoardStudent | null>(null);
+  const [moving, setMoving] = useState<MovingLesson | null>(null); // שיעור שנגרר
   const [choose, setChoose] = useState<Drop | null>(null); // בחירת כלי כשיש כמה אפשרויות
   const [busyCell, setBusyCell] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
@@ -80,14 +88,15 @@ export function AssignBoard({
     setBusyCell(key);
     setChoose(null);
     startTransition(async () => {
-      const res = await quickAssign({
-        student_id: d.student.id, teacher_id: d.teacher.id, instrument_id: instrumentId,
-        weekday: d.weekday, start_time: fmt(d.start),
-      });
+      const slot = { teacher_id: d.teacher.id, instrument_id: instrumentId, weekday: d.weekday, start_time: fmt(d.start) };
+      const res = d.lessonId
+        ? await moveLesson(d.lessonId, slot)
+        : await quickAssign({ ...slot, student_id: d.student.id });
       setBusyCell(null);
       if (res.ok) {
         setPicked(null);
-        setToast({ ok: true, text: `${d.student.name} שובץ/ה אצל ${d.teacher.name}, ${DAYS[d.weekday]} ${fmt(d.start)}` });
+        const verb = d.lessonId ? 'הועבר/ה' : 'שובץ/ה';
+        setToast({ ok: true, text: `${d.student.name} ${verb} אצל ${d.teacher.name}, ${DAYS[d.weekday]} ${fmt(d.start)}` });
         router.refresh();
       } else {
         setToast({ ok: false, text: res.error });
@@ -154,7 +163,7 @@ export function AssignBoard({
               className={`student-card${picked?.id === s.id ? ' picked' : ''}${s.undecided ? ' undecided' : ''}`}
               draggable
               onDragStart={(e) => {
-                e.dataTransfer.setData('text/plain', String(s.id));
+                e.dataTransfer.setData('text/plain', `s:${s.id}`);
                 e.dataTransfer.effectAllowed = 'move';
                 setDragging(s);
               }}
@@ -163,7 +172,10 @@ export function AssignBoard({
               title="גוררים למשבצת פנויה, או לוחצים ואז לוחצים על משבצת"
             >
               <div className="student-card-top">
-                <strong>{s.name}</strong>
+                <Link href={`/students/${s.id}`} className="student-card-name" draggable={false}
+                  onClick={(e) => e.stopPropagation()} title="פתיחת כרטיס התלמיד/ה">
+                  {s.name}
+                </Link>
                 {s.age && <span className="muted">{s.age}</span>}
               </div>
               <div className="student-card-tags">
@@ -221,6 +233,7 @@ export function AssignBoard({
           {shown.map((t) => {
             const { days, rows, cells, slotRows } = teacherGrid(t.hours, t.lessons, t.choirs);
             const active = dragging ?? picked;
+            const ready = !!active || !!moving;
             return (
               <div key={t.id} className="card teacher-board">
                 <div className="teacher-board-head">
@@ -250,9 +263,20 @@ export function AssignBoard({
                                 const lesson = t.lessons[cell.index];
                                 return (
                                   <td key={d} rowSpan={cell.span}>
-                                    <Link href={`/lessons/${lesson.id}`} className={`slot slot-${lesson.status}`} title={STATUS_LABELS[lesson.status]}>
-                                      {lesson.student}<small>{fmt(lesson.start)} · {lesson.instrument}</small>
-                                    </Link>
+                                    <div
+                                      className={`slot slot-${lesson.status} slot-movable${moving?.id === lesson.id ? ' moving' : ''}`}
+                                      title={`${STATUS_LABELS[lesson.status]} · גוררים כדי להעביר לשעה או למורה אחר/ת`}
+                                      draggable
+                                      onDragStart={(e) => {
+                                        e.dataTransfer.setData('text/plain', `l:${lesson.id}`);
+                                        e.dataTransfer.effectAllowed = 'move';
+                                        setMoving({ ...lesson, teacherId: t.id });
+                                      }}
+                                      onDragEnd={() => setMoving(null)}
+                                    >
+                                      <Link href={`/students/${lesson.studentId}`} draggable={false}>{lesson.student}</Link>
+                                      <Link href={`/lessons/${lesson.id}`} draggable={false}><small>{fmt(lesson.start)} · {lesson.instrument}</small></Link>
+                                    </div>
                                   </td>
                                 );
                               }
@@ -264,14 +288,23 @@ export function AssignBoard({
                                 <td
                                   key={d}
                                   rowSpan={cell.span}
-                                  className={`drop${busyCell === key ? ' busy' : ''}${active ? ' ready' : ''}`}
+                                  className={`drop${busyCell === key ? ' busy' : ''}${ready ? ' ready' : ''}`}
                                   onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('over'); }}
                                   onDragLeave={(e) => e.currentTarget.classList.remove('over')}
                                   onDrop={(e) => {
                                     e.preventDefault();
                                     e.currentTarget.classList.remove('over');
-                                    const s = students.find((x) => x.id === Number(e.dataTransfer.getData('text/plain')));
-                                    if (s) assign({ student: s, teacher: t, weekday: d, start: m });
+                                    const [kind, id] = e.dataTransfer.getData('text/plain').split(':');
+                                    if (kind === 'l' && moving?.id === Number(id)) {
+                                      setMoving(null);
+                                      assign({
+                                        student: { id: moving.studentId, name: moving.student, instrumentId: moving.instrumentId },
+                                        teacher: t, weekday: d, start: m, lessonId: moving.id,
+                                      });
+                                      return;
+                                    }
+                                    const s = students.find((x) => x.id === Number(id));
+                                    if (kind === 's' && s) assign({ student: s, teacher: t, weekday: d, start: m });
                                   }}
                                   onClick={() => picked && assign({ student: picked, teacher: t, weekday: d, start: m })}
                                   title={`שיבוץ ב-${fmt(m)}`}

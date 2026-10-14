@@ -132,6 +132,7 @@ export async function saveStudent(fd: FormData) {
     language: str(fd, 'language') || DEFAULT_LANGUAGE,
     payment_track: oneOf(str(fd, 'payment_track'), PAYMENT_TRACKS) ?? 'unknown',
     standing_order: fd.get('standing_order') === 'on',
+    needs_review: fd.get('needs_review') === 'on',
   };
   if (!row.first_name || !row.last_name) fail(here, 'חסר שם פרטי או שם משפחה');
   if (!row.health_fund) row.health_plan = '';

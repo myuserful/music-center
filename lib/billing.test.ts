@@ -6,7 +6,8 @@ const student = (over: Partial<Student>): Student => ({
   id: 1, first_name: 'א', last_name: 'ב', school: '', birth_date: null, birth_date_approx: false, branch_id: null,
   requested_instrument_id: null, notes: '', status: 'active', gender: null, health_fund: null, health_plan: '',
   id_number: '', has_referral: false, hmo_reported: false, preferred_times: '', language: 'עברית',
-  payment_track: 'private', standing_order: false, ...over,
+  payment_track: 'private', standing_order: false, needs_review: false,
+  call_state: 'to_call', call_attempts: 0, last_call_at: null, ...over,
 });
 
 const lesson: Activity = {

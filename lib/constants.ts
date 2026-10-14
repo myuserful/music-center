@@ -57,6 +57,18 @@ export const STATUS_LABELS: Record<Status, string> = {
   confirmed: 'סופי',
 };
 
+// ---- טלפונים להורים ----
+export type CallState = 'to_call' | 'no_answer';
+/** עמודות לוח הטלפונים: שתי הראשונות = מצב השיחה, השתיים האחרונות = סטטוס השיבוץ אחרי שענו */
+export type CallColumn = CallState | 'undecided' | 'confirmed';
+export const CALL_COLUMNS: CallColumn[] = ['to_call', 'no_answer', 'undecided', 'confirmed'];
+export const CALL_COLUMN_LABELS: Record<CallColumn, string> = {
+  to_call: 'צריך להתקשר',
+  no_answer: 'לא ענו',
+  undecided: 'ענו - מתלבטים',
+  confirmed: 'אושר',
+};
+
 // ---- משימות ----
 export type TaskStatus = 'todo' | 'doing' | 'done';
 export const TASK_STATUSES: TaskStatus[] = ['todo', 'doing', 'done'];
@@ -113,3 +125,29 @@ export const CHARGE_STATE_LABELS: Record<ChargeState, string> = {
   rejected: 'נדחה',
   cancelled: 'בוטל',
 };
+
+// ---- כספים: הכנסות והוצאות ----
+export type TxKind = 'income' | 'expense';
+export const TX_KIND_LABELS: Record<TxKind, string> = { income: 'הכנסה', expense: 'הוצאה' };
+
+export type TxMethod = 'bank_transfer' | 'credit' | 'cash' | 'check' | 'standing_order' | 'bit';
+export const TX_METHODS: TxMethod[] = ['bank_transfer', 'credit', 'cash', 'check', 'standing_order', 'bit'];
+export const TX_METHOD_LABELS: Record<TxMethod, string> = {
+  bank_transfer: 'העברה בנקאית',
+  credit: 'אשראי',
+  cash: 'מזומן',
+  check: "צ'ק",
+  standing_order: 'הוראת קבע',
+  bit: 'ביט / פייבוקס',
+};
+
+export const SALARY_CATEGORY = 'שכר מורים';
+/** הצעות לקטגוריה. אפשר גם להקליד ערך אחר */
+export const EXPENSE_CATEGORIES = [
+  SALARY_CATEGORY, 'שכירות', 'חשמל ומים', 'ארנונה', 'ציוד וכלי נגינה', 'תיקונים ותחזוקה', 'פרסום',
+  'ביטוח', 'הנהלת חשבונות', 'עמלות בנק וסליקה', 'תוכנות ואינטרנט', 'טלפון', 'משרד', 'אירועים וכיבוד', 'מיסים', 'אחר',
+];
+export const INCOME_CATEGORIES = ['תרומה', 'מענק / תמיכה', 'הופעות ואירועים', 'השכרת חדרים', 'דמי רישום', 'מכירות', 'אחר'];
+/** קטגוריות של הכנסות שנספרות אוטומטית */
+export const PARENTS_INCOME = 'שכר לימוד - הורים';
+export const FUNDS_INCOME = 'קופות חולים';

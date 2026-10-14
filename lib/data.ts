@@ -8,41 +8,57 @@ import type {
   Teacher, TeacherHours,
 } from './types';
 
+type Raw = Record<string, unknown[]>;
+
+/** עד שמריצים את 0025: מנסים את הפונקציות רק פעם בדקה, לא בכל בקשה (זה היה מוסיף עוד פנייה למסד) */
+const noRpc = { app: 0, billing: 0 };
+const tryRpc = (since: number) => Date.now() - since > 60_000;
+
+/** כל הטבלאות בקריאה אחת (פונקציה app_data במסד, 0025). אם עוד לא הורצה - 12 קריאות נפרדות */
+async function fetchAll(db: DB): Promise<Raw> {
+  if (tryRpc(noRpc.app)) {
+    const rpc = await db.rpc('app_data');
+    if (!rpc.error) return rpc.data as Raw;
+    if (rpc.error.code !== 'PGRST202') throw new Error(rpc.error.message);
+    noRpc.app = Date.now();
+  }
+
+  const queries = {
+    branches: db.from('branches').select('*').order('name'),
+    rooms: db.from('rooms').select('*').order('name'),
+    instruments: db.from('instruments').select('*').order('name'),
+    teachers: db.from('teachers').select('*').order('first_name'),
+    teacher_instruments: db.from('teacher_instruments').select('*'),
+    teacher_branches: db.from('teacher_branches').select('*'),
+    teacher_hours: db.from('teacher_hours').select('*').order('weekday').order('start_time'),
+    students: db.from('students').select('*').order('first_name'),
+    contacts: db.from('contacts').select('*').order('is_primary', { ascending: false }),
+    lessons: db.from('lessons').select('*').order('weekday').order('start_time'),
+    choirs: db.from('choirs').select('*').order('weekday').order('start_time'),
+    choir_enrollments: db.from('choir_enrollments').select('*').order('created_at'),
+  };
+  const results = await Promise.all(Object.values(queries));
+  const firstError = results.find((r) => r.error)?.error;
+  if (firstError) throw new Error(firstError.message);
+  return Object.fromEntries(Object.keys(queries).map((k, i) => [k, results[i].data ?? []]));
+}
+
 /** טוען את כל נתוני המערכת. מרכז מוזיקה הוא בהיקף של מאות רשומות, אז זה פשוט ומהיר. */
 export async function loadAll(db: DB) {
-  const [branches, rooms, instruments, teachers, ti, tb, hours, students, contacts, lessons, choirs, enrollments] =
-    await Promise.all([
-      db.from('branches').select('*').order('name'),
-      db.from('rooms').select('*').order('name'),
-      db.from('instruments').select('*').order('name'),
-      db.from('teachers').select('*').order('first_name'),
-      db.from('teacher_instruments').select('*'),
-      db.from('teacher_branches').select('*'),
-      db.from('teacher_hours').select('*').order('weekday').order('start_time'),
-      db.from('students').select('*').order('first_name'),
-      db.from('contacts').select('*').order('is_primary', { ascending: false }),
-      db.from('lessons').select('*').order('weekday').order('start_time'),
-      db.from('choirs').select('*').order('weekday').order('start_time'),
-      db.from('choir_enrollments').select('*').order('created_at'),
-    ]);
-
-  const firstError = [branches, rooms, instruments, teachers, ti, tb, hours, students, contacts, lessons, choirs, enrollments]
-    .find((r) => r.error)?.error;
-  if (firstError) throw new Error(firstError.message);
-
+  const raw = await fetchAll(db);
   const data = {
-    branches: branches.data as Branch[],
-    rooms: rooms.data as Room[],
-    instruments: instruments.data as Instrument[],
-    teachers: teachers.data as Teacher[],
-    teacherInstruments: ti.data as { teacher_id: number; instrument_id: number }[],
-    teacherBranches: tb.data as { teacher_id: number; branch_id: number }[],
-    hours: hours.data as TeacherHours[],
-    students: students.data as Student[],
-    contacts: contacts.data as Contact[],
-    lessons: lessons.data as Lesson[],
-    choirs: choirs.data as Choir[],
-    enrollments: enrollments.data as Enrollment[],
+    branches: raw.branches as Branch[],
+    rooms: raw.rooms as Room[],
+    instruments: raw.instruments as Instrument[],
+    teachers: raw.teachers as Teacher[],
+    teacherInstruments: raw.teacher_instruments as { teacher_id: number; instrument_id: number }[],
+    teacherBranches: raw.teacher_branches as { teacher_id: number; branch_id: number }[],
+    hours: raw.teacher_hours as TeacherHours[],
+    students: raw.students as Student[],
+    contacts: raw.contacts as Contact[],
+    lessons: raw.lessons as Lesson[],
+    choirs: raw.choirs as Choir[],
+    enrollments: raw.choir_enrollments as Enrollment[],
   };
 
   const byId = <T extends { id: number }>(rows: T[]) => new Map(rows.map((r) => [r.id, r]));
@@ -88,6 +104,16 @@ export type All = Awaited<ReturnType<typeof loadAll>>;
 
 /** נתוני תשלומים. studentId מצמצם לתלמיד אחד */
 export async function loadBilling(db: DB, studentId?: number) {
+  if (tryRpc(noRpc.billing)) {
+    const rpc = await db.rpc('billing_data', { p_student: studentId ?? null });
+    if (!rpc.error) {
+      const d = rpc.data as { settings: BillingSettings; rates: FundRate[]; charges: Charge[]; payments: Payment[] };
+      return { settings: d.settings, rates: d.rates, charges: d.charges, payments: d.payments };
+    }
+    if (rpc.error.code !== 'PGRST202') throw new Error(rpc.error.message);
+    noRpc.billing = Date.now();
+  }
+
   const charges = db.from('charges').select('*').order('month', { ascending: false }).order('id');
   const payments = db.from('payments').select('*').order('paid_on', { ascending: false }).order('id', { ascending: false });
   const [settings, rates, c, p] = await Promise.all([

@@ -27,8 +27,8 @@ export default async function AssignPage({ searchParams }: { searchParams: SP })
       .map((h) => ({ weekday: h.weekday, start: toMin(h.start_time), end: toMin(h.end_time) })),
     lessons: all.lessons.filter((l) => l.teacher_id === t.id).map((l) => ({
       id: l.id, weekday: l.weekday, start: toMin(l.start_time), status: l.status,
-      student: fullName(maps.student.get(l.student_id)),
-      instrument: maps.instrument.get(l.instrument_id)?.name ?? '',
+      studentId: l.student_id, student: fullName(maps.student.get(l.student_id)),
+      instrumentId: l.instrument_id, instrument: maps.instrument.get(l.instrument_id)?.name ?? '',
     })),
     choirs: all.choirs.filter((c) => c.teacher_id === t.id).map((c) => ({
       id: c.id, name: c.name, weekday: c.weekday, start: toMin(c.start_time), end: toMin(c.end_time),

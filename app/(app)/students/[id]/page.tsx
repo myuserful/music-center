@@ -21,19 +21,24 @@ import { fullName, type Student } from '@/lib/types';
 export default async function StudentPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
   const [{ id }, sp] = await Promise.all([params, searchParams]);
   const db = await createClient();
-  const all = await loadAll(db);
-  const { maps } = all;
   const isNew = id === 'new';
+  // שתי הטעינות במקביל (כל פנייה למסד לוקחת זמן ברשת)
+  const [all, loadedBilling] = await Promise.all([
+    loadAll(db),
+    isNew || Number.isNaN(Number(id)) ? null : loadBilling(db, Number(id)),
+  ]);
+  const { maps } = all;
   const s: Student | undefined = isNew
     ? {
       id: 0, first_name: '', last_name: '', school: '', birth_date: null, birth_date_approx: false, branch_id: null,
       requested_instrument_id: null, notes: '', status: 'active', gender: null, health_fund: null, health_plan: '',
       id_number: '', has_referral: false, hmo_reported: false, preferred_times: '', language: DEFAULT_LANGUAGE,
-      payment_track: 'unknown', standing_order: false,
+      payment_track: 'unknown', standing_order: false, needs_review: false,
+      call_state: 'to_call', call_attempts: 0, last_call_at: null,
     }
     : maps.student.get(Number(id));
   if (!s) notFound();
-  const billing = isNew ? null : await loadBilling(db, s.id);
+  const billing = loadedBilling;
 
   const here = `/students/${s.id}`;
   const contacts = all.contacts.filter((c) => c.student_id === s.id);
@@ -47,7 +52,7 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
   return (
     <>
       <BackLink href="/students">כל התלמידים</BackLink>
-      <PageHead title={isNew ? 'תלמיד/ה חדש/ה' : fullName(s)} sub={isNew ? undefined : STUDENT_STATUS_LABELS[s.status]}>
+      <PageHead title={isNew ? 'תלמיד/ה חדש/ה' : fullName(s) || '(ללא שם)'} sub={isNew ? undefined : STUDENT_STATUS_LABELS[s.status]}>
         {!isNew && <Link className="btn btn-primary" href={`/lessons/new?student=${s.id}`}>+ שיבוץ שיעור</Link>}
       </PageHead>
       <Flash sp={sp} />
@@ -114,6 +119,7 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
             </>
           )}
           <label className="wide">הערות<textarea name="notes" defaultValue={s.notes} /></label>
+          <label className="check"><input type="checkbox" name="needs_review" defaultChecked={s.needs_review} /> לבדיקה (מולא עכשיו, צריך לעבור על הפרטים)</label>
         </div>
         <div className="form-foot"><button className="btn btn-primary">שמירה</button></div>
       </form>

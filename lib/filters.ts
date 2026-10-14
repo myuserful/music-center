@@ -15,13 +15,15 @@ export function studentFilters(sp: Params) {
     gender: one(sp.gender) as Gender | '',
     // ברירת מחדל: פעילים ומתלבטים. "all" = כולם
     status: one(sp.status) as StudentStatus | 'all' | '',
+    review: one(sp.review) === '1',
   };
 }
 
 export function filterStudents(all: All, f: ReturnType<typeof studentFilters>) {
-  const { q, qDigits, branch, gender, status } = f;
+  const { q, qDigits, branch, gender, status, review } = f;
   return all.students.filter((s) =>
     (status === 'all' || (status ? s.status === status : s.status !== 'inactive')) &&
+    (!review || s.needs_review) &&
     (!branch || s.branch_id === branch) &&
     (!gender || s.gender === gender) &&
     (!q || fullName(s).includes(q) || s.id_number.includes(q) || all.contacts.some((c) => c.student_id === s.id && ((qDigits !== '' && c.phone.replace(/\D/g, '').includes(qDigits)) || c.name.includes(q)))),
