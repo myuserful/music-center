@@ -38,6 +38,7 @@ export const done = (path: string, msg = 'נשמר'): never => redirect(withMsg(
 export function dbMessage(e: { code?: string; message: string }): string {
   if (e.code === '23505') return 'קיימת כבר רשומה זהה (או התנגשות בשיבוץ)';
   if (e.code === '23503') return 'לא ניתן למחוק: יש רשומות שמקושרות לזה';
-  if (e.code === '23514') return 'ערך לא תקין';
+  if (e.code === '23514') return 'ערך לא תקין (אם זה סטטוס "רשימת המתנה" - צריך להריץ את 0027_waiting_list.sql ב-Supabase)';
+  if (e.code === 'PGRST204') return 'חסרה עמודה במסד הנתונים - צריך להריץ את המיגרציה האחרונה ב-Supabase';
   return e.message;
 }

@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { BackLink, Empty, Flash, PageHead, RoomOptions, StatusBadge, type SP } from '@/components/ui';
-import { addTeacherHours, deleteTeacher, deleteTeacherHours, saveTeacher } from '@/lib/actions/people';
+import { addTeacherHours, deleteTeacher, deleteTeacherHours, saveTeacher, updateTeacherHours } from '@/lib/actions/people';
 import {
   BOARD_DAYS, DAYS, INTEREST_LABELS, LANGUAGES, TEACHER_GENDER_LABELS, type Interest, type TeacherGender,
 } from '@/lib/constants';
@@ -36,6 +36,7 @@ export default async function TeacherPage({ params, searchParams }: { params: Pr
       <BackLink href="/teachers">כל המורים</BackLink>
       <PageHead title={isNew ? 'מורה חדש/ה' : fullName(t)}>
         {!isNew && <Link className="btn" href={`/schedule?teacher=${t.id}`}>מערכת שבועית</Link>}
+        {!isNew && <Link className="btn" href={`/teachers/print?teacher=${t.id}`}>הדפסת מערכת</Link>}
       </PageHead>
       <Flash sp={sp} />
 
@@ -62,13 +63,6 @@ export default async function TeacherPage({ params, searchParams }: { params: Pr
           </label>
           <label>טלפון<input name="phone" defaultValue={t.phone} dir="ltr" /></label>
           <label>אימייל<input name="email" type="email" defaultValue={t.email} dir="ltr" /></label>
-          <label>
-            חדר קבוע
-            <select name="room_id" defaultValue={t.room_id ?? ''}>
-              <option value="">ללא</option>
-              <RoomOptions branches={all.branches} rooms={all.rooms} />
-            </select>
-          </label>
           <label>מחיר לשעה (₪)<input name="hourly_rate" type="number" min={0} step="any" defaultValue={t.hourly_rate ?? ''} dir="ltr" /></label>
           <label>
             ימים בשבוע
@@ -127,12 +121,31 @@ export default async function TeacherPage({ params, searchParams }: { params: Pr
       {!isNew && (
         <>
           <section className="card">
-            <h2>שעות עבודה</h2>
+            <h2>שעות עבודה וחדרים</h2>
+            <p className="muted">החדר שייך ליום ולשעות: כל יום אפשר ללמד בחדר (ובסניף) אחר. שיעור חדש מקבל אוטומטית את החדר של השעות.
+              בלחיצה על &quot;עדכון&quot; כל השיעורים של המורה בשעות האלה עוברים לחדר שנבחר (אם הוא פנוי בזמן השיעור).</p>
             {hours.length === 0 ? <Empty>לא הוגדרו שעות עבודה. בלי שעות אי אפשר לשבץ שיעורים.</Empty> : (
               <ul className="list">
                 {hours.map((h) => (
                   <li key={h.id}>
-                    <span><strong>{DAYS[h.weekday]}</strong> {hhmm(h.start_time)}-{hhmm(h.end_time)}</span>
+                    <form action={updateTeacherHours} className="row-form">
+                      <input type="hidden" name="id" value={h.id} />
+                      <input type="hidden" name="teacher_id" value={t.id} />
+                      <select name="weekday" defaultValue={h.weekday} aria-label="יום">
+                        {BOARD_DAYS.map((d) => <option key={d} value={d}>{DAYS[d]}</option>)}
+                      </select>
+                      <select name="start_time" defaultValue={hhmm(h.start_time)} aria-label="משעה">
+                        {QUARTER_TIME_OPTIONS.map((x) => <option key={x}>{x}</option>)}
+                      </select>
+                      <select name="end_time" defaultValue={hhmm(h.end_time)} aria-label="עד שעה">
+                        {QUARTER_TIME_OPTIONS.map((x) => <option key={x}>{x}</option>)}
+                      </select>
+                      <select name="room_id" defaultValue={h.room_id ?? ''} aria-label="חדר">
+                        <option value="">בלי חדר</option>
+                        <RoomOptions branches={all.branches} rooms={all.rooms} />
+                      </select>
+                      <button className="btn btn-xs btn-primary">עדכון</button>
+                    </form>
                     <form action={deleteTeacherHours}>
                       <input type="hidden" name="id" value={h.id} />
                       <input type="hidden" name="teacher_id" value={t.id} />
@@ -154,6 +167,12 @@ export default async function TeacherPage({ params, searchParams }: { params: Pr
               </label>
               <label>עד שעה
                 <select name="end_time" defaultValue="19:00">{QUARTER_TIME_OPTIONS.map((x) => <option key={x}>{x}</option>)}</select>
+              </label>
+              <label>חדר
+                <select name="room_id" defaultValue="">
+                  <option value="">ללא</option>
+                  <RoomOptions branches={all.branches} rooms={all.rooms} />
+                </select>
               </label>
               <button className="btn btn-primary btn-xs">+ הוספה</button>
             </form>

@@ -11,6 +11,7 @@ const LINKS = [
   { href: '/schedule', label: 'לוח שיעורים', icon: '▦' },
   { href: '/tracking', label: 'מעקב שיבוץ', icon: '✓' },
   { href: '/students', label: 'תלמידים', icon: '☺' },
+  { href: '/funds', label: 'קופות חולים', icon: '✚' },
   { href: '/payments', label: 'תשלומים', icon: '₪' },
   { href: '/finance', label: 'הכנסות והוצאות', icon: '⚖' },
   { href: '/teachers', label: 'מורים', icon: '♪' },

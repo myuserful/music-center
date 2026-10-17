@@ -12,11 +12,13 @@ export type Teacher = {
   gender: TeacherGender | null; teaches_young_boys: boolean; hourly_rate: number | null;
   interest: Interest | null; days_per_week: number | null; languages: string[];
 };
-export type TeacherHours = { id: number; teacher_id: number; weekday: number; start_time: string; end_time: string };
+export type TeacherHours = {
+  id: number; teacher_id: number; weekday: number; start_time: string; end_time: string; room_id: number | null;
+};
 export type Student = {
   id: number; first_name: string; last_name: string; school: string; birth_date: string | null; birth_date_approx: boolean;
-  branch_id: number | null; requested_instrument_id: number | null; notes: string; status: StudentStatus;
-  gender: Gender | null; health_fund: HealthFund | null; health_plan: string; id_number: string;
+  branch_id: number | null; requested_instrument_id: number | null; notes: string; status: StudentStatus; waiting_reason: string;
+  gender: Gender | null; health_fund: HealthFund | null; health_plan: string; id_number: string; three_digits: string;
   has_referral: boolean; hmo_reported: boolean; preferred_times: string; language: string;
   payment_track: PaymentTrack; standing_order: boolean; needs_review: boolean;
   call_state: CallState; call_attempts: number; last_call_at: string | null;

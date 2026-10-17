@@ -3,20 +3,26 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
-import { moveLesson, quickAssign } from '@/lib/actions/assignments';
-import { DAYS, STATUS_LABELS, type Status } from '@/lib/constants';
+import { changeLessonStatus, moveLesson, quickAssign, quickEnroll, removeLesson } from '@/lib/actions/assignments';
+import { addHoursQuick, removeHoursQuick } from '@/lib/actions/people';
+import { BOARD_DAYS, CHOIR_CAPACITY, DAYS, STATUS_LABELS, STATUSES, type Status } from '@/lib/constants';
 import { teacherGrid } from '@/lib/grid';
-import { fmt } from '@/lib/time';
+import { fmt, QUARTER_TIME_OPTIONS } from '@/lib/time';
 
 export type BoardTeacher = {
   id: number; name: string; room: string; branches: string[]; languages: string[];
   instruments: { id: number; name: string }[];
-  hours: { weekday: number; start: number; end: number }[];
+  hours: { id: number; weekday: number; start: number; end: number }[];
   lessons: {
     id: number; weekday: number; start: number; status: Status;
     studentId: number; student: string; instrumentId: number; instrument: string;
+    age: string; studentNotes: string; preferred: string; lessonNotes: string;
+    contacts: { name: string; relation: string; phone: string }[];
   }[];
-  choirs: { id: number; name: string; weekday: number; start: number; end: number }[];
+  choirs: {
+    id: number; name: string; weekday: number; start: number; end: number;
+    members: { id: number; name: string }[];
+  }[];
 };
 
 export type BoardStudent = {
@@ -50,6 +56,22 @@ export function AssignBoard({
   const [choose, setChoose] = useState<Drop | null>(null); // בחירת כלי כשיש כמה אפשרויות
   const [busyCell, setBusyCell] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
+  const [info, setInfo] = useState<{ lesson: BoardTeacher['lessons'][number]; teacher: string } | null>(null); // פרטי שיעור
+  const [deleting, setDeleting] = useState(false);
+  const [statusBusy, setStatusBusy] = useState<number | null>(null); // שיעור שהסטטוס שלו מתעדכן
+  const [hoursOpen, setHoursOpen] = useState<number | null>(null); // מורה שפאנל שעות העבודה שלו פתוח
+  const [hoursBusy, setHoursBusy] = useState(false);
+
+  /** הוספה / מחיקה של שעות עבודה, ואז רענון הלוח */
+  function changeHours(run: () => Promise<{ ok: true } | { ok: false; error: string }>, okText: string) {
+    setHoursBusy(true);
+    startTransition(async () => {
+      const res = await run();
+      setHoursBusy(false);
+      setToast(res.ok ? { ok: true, text: okText } : { ok: false, text: res.error });
+      if (res.ok) router.refresh();
+    });
+  }
   const [, startTransition] = useTransition();
 
   const byId = useMemo(() => new Map(teachers.map((t) => [t.id, t])), [teachers]);
@@ -97,6 +119,43 @@ export function AssignBoard({
         setPicked(null);
         const verb = d.lessonId ? 'הועבר/ה' : 'שובץ/ה';
         setToast({ ok: true, text: `${d.student.name} ${verb} אצל ${d.teacher.name}, ${DAYS[d.weekday]} ${fmt(d.start)}` });
+        router.refresh();
+      } else {
+        setToast({ ok: false, text: res.error });
+      }
+    });
+  }
+
+  /** רישום תלמיד/ה למקהלה (גרירה לבלוק המקהלה) */
+  function enroll(choir: BoardTeacher['choirs'][number], student: Pick<BoardStudent, 'id' | 'name'>) {
+    if (choir.members.some((m) => m.id === student.id)) {
+      setToast({ ok: false, text: `${student.name} כבר רשום/ה ל${choir.name}` });
+      return;
+    }
+    const key = `choir-${choir.id}`;
+    setBusyCell(key);
+    startTransition(async () => {
+      const res = await quickEnroll(choir.id, student.id);
+      setBusyCell(null);
+      if (res.ok) {
+        setPicked(null);
+        setToast({ ok: true, text: `${student.name} נרשם/ה למקהלה ${choir.name}` });
+        router.refresh();
+      } else {
+        setToast({ ok: false, text: res.error });
+      }
+    });
+  }
+
+  /** שינוי סטטוס שיעור (למשל אישור השיבוץ) ישירות מהלוח */
+  function setStatus(lesson: BoardTeacher['lessons'][number], next: Status) {
+    setStatusBusy(lesson.id);
+    startTransition(async () => {
+      const res = await changeLessonStatus(lesson.id, next);
+      setStatusBusy(null);
+      if (res.ok) {
+        setInfo((cur) => (cur?.lesson.id === lesson.id ? { ...cur, lesson: { ...cur.lesson, status: next } } : cur));
+        setToast({ ok: true, text: `${lesson.student}: ${STATUS_LABELS[next]}` });
         router.refresh();
       } else {
         setToast({ ok: false, text: res.error });
@@ -240,6 +299,12 @@ export function AssignBoard({
                   <Link href={`/teachers/${t.id}`}><strong>{t.name}</strong></Link>
                   {t.branches.map((b) => <span key={b} className="chip chip-branch">⌂ {b}</span>)}
                   <span className="muted">{t.instruments.map((i) => i.name).join(', ')}{t.room && ` · ${t.room}`}</span>
+                  <button
+                    type="button" className={`btn btn-xs ${hoursOpen === t.id ? 'btn-primary' : 'btn-ghost'}`}
+                    onClick={() => setHoursOpen(hoursOpen === t.id ? null : t.id)} aria-expanded={hoursOpen === t.id}
+                  >
+                    🕒 שעות עבודה
+                  </button>
                   {active && active.instrumentId && t.instruments.length > 0 && !t.instruments.some((i) => i.id === active.instrumentId) && (
                     <span className="badge badge-pending">לא מלמד/ת {active.instrument}</span>
                   )}
@@ -247,6 +312,19 @@ export function AssignBoard({
                     <span className="badge badge-pending">לא דובר/ת {active.language}</span>
                   )}
                 </div>
+                {(hoursOpen === t.id || t.hours.length === 0) && (
+                  <HoursPanel
+                    teacher={t} busy={hoursBusy}
+                    onAdd={(weekday, start, end) => changeHours(
+                      () => addHoursQuick(t.id, weekday, start, end), `נוספו שעות ל${t.name}: ${DAYS[weekday]} ${start}-${end}`)}
+                    onRemove={(h) => {
+                      const inside = t.lessons.filter((l) => l.weekday === h.weekday && l.start >= h.start && l.start < h.end).length;
+                      const msg = `למחוק את השעות ${DAYS[h.weekday]} ${fmt(h.start)}-${fmt(h.end)}?` +
+                        (inside ? `\nיש בשעות האלה ${inside} שיעורים. השיעורים לא יימחקו, אבל יישארו מחוץ לשעות העבודה.` : '');
+                      if (confirm(msg)) changeHours(() => removeHoursQuick(h.id), 'שעות העבודה נמחקו');
+                    }}
+                  />
+                )}
                 {days.length === 0 ? <p className="empty">לא הוגדרו שעות עבודה</p> : (
                   <div className="table-wrap">
                     <table className="board mini-board">
@@ -273,15 +351,64 @@ export function AssignBoard({
                                         setMoving({ ...lesson, teacherId: t.id });
                                       }}
                                       onDragEnd={() => setMoving(null)}
+                                      onClick={() => setInfo({ lesson, teacher: t.name })}
+                                      role="button"
+                                      tabIndex={0}
+                                      onKeyDown={(e) => { if (e.key === 'Enter') setInfo({ lesson, teacher: t.name }); }}
                                     >
-                                      <Link href={`/students/${lesson.studentId}`} draggable={false}>{lesson.student}</Link>
-                                      <Link href={`/lessons/${lesson.id}`} draggable={false}><small>{fmt(lesson.start)} · {lesson.instrument}</small></Link>
+                                      <span className="slot-name">
+                                        {lesson.student}
+                                        {lesson.age && <span className="slot-age"> · {lesson.age}</span>}
+                                        {(lesson.studentNotes || lesson.lessonNotes) && <span className="slot-note" aria-label="יש הערות"> ✎</span>}
+                                      </span>
+                                      <small>{fmt(lesson.start)} · {lesson.instrument}</small>
+                                      {lesson.status !== 'confirmed' && (
+                                        <button
+                                          type="button" className="slot-confirm" draggable={false}
+                                          disabled={statusBusy === lesson.id}
+                                          onClick={(e) => { e.stopPropagation(); setStatus(lesson, 'confirmed'); }}
+                                          onKeyDown={(e) => e.stopPropagation()}
+                                          title="אישור השיבוץ (סופי)" aria-label={`אישור השיבוץ של ${lesson.student}`}
+                                        >
+                                          {statusBusy === lesson.id ? '…' : '✓'}
+                                        </button>
+                                      )}
                                     </div>
                                   </td>
                                 );
                               }
                               if (cell.kind === 'choir') {
-                                return <td key={d} rowSpan={cell.span}><span className="slot slot-choir">{t.choirs[cell.index].name}</span></td>;
+                                const choir = t.choirs[cell.index];
+                                const full = choir.members.length >= CHOIR_CAPACITY;
+                                return (
+                                  <td
+                                    key={d}
+                                    rowSpan={cell.span}
+                                    className={`choir-drop${full ? ' full' : ''}${picked ? ' ready' : ''}`}
+                                    onDragOver={(e) => { if (!full) { e.preventDefault(); e.currentTarget.classList.add('over'); } }}
+                                    onDragLeave={(e) => e.currentTarget.classList.remove('over')}
+                                    onDrop={(e) => {
+                                      e.preventDefault();
+                                      e.currentTarget.classList.remove('over');
+                                      const [kind, id] = e.dataTransfer.getData('text/plain').split(':');
+                                      const s = students.find((x) => x.id === Number(id));
+                                      if (kind === 's' && s) enroll(choir, s);
+                                    }}
+                                    onClick={() => (picked ? enroll(choir, picked) : router.push(`/choirs/${choir.id}`))}
+                                    title={full ? 'המקהלה מלאה' : 'גוררים לכאן תלמיד/ה כדי לרשום למקהלה'}
+                                  >
+                                    <div className="slot slot-choir">
+                                      <span className="slot-name">♫ {choir.name}</span>
+                                      <small>
+                                        {busyCell === `choir-${choir.id}` ? 'רושם...' : `${choir.members.length}/${CHOIR_CAPACITY}${full ? ' · מלאה' : ''}`}
+                                        {' · '}{fmt(choir.start)}-{fmt(choir.end)}
+                                      </small>
+                                      {choir.members.length > 0 && (
+                                        <small className="choir-members">{choir.members.map((x) => x.name).join(', ')}</small>
+                                      )}
+                                    </div>
+                                  </td>
+                                );
                               }
                               if (cell.kind === 'off') return <td key={d} className="off" />;
                               return (
@@ -326,6 +453,73 @@ export function AssignBoard({
       </section>
 
       {/* בחירת כלי כשהמורה מלמד/ת כמה כלים */}
+      {info && (
+        <div className="modal-backdrop" onClick={() => setInfo(null)}>
+          <div className="card modal lesson-info" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="פרטי השיעור">
+            <h3>
+              {info.lesson.student}
+              {info.lesson.age && <span className="muted"> · גיל {info.lesson.age}</span>}
+            </h3>
+            <p className="muted">
+              {info.lesson.instrument} אצל {info.teacher}, {DAYS[info.lesson.weekday]} {fmt(info.lesson.start)}
+              {' · '}<span className={`badge badge-${info.lesson.status}`}>{STATUS_LABELS[info.lesson.status]}</span>
+            </p>
+            <div className="lesson-info-status">
+              <span className="muted">סטטוס:</span>
+              {STATUSES.map((st) => (
+                <button
+                  key={st} type="button" disabled={statusBusy === info.lesson.id || info.lesson.status === st}
+                  className={`btn btn-xs ${info.lesson.status === st ? `badge-${st}` : st === 'confirmed' ? 'btn-primary' : ''}`}
+                  onClick={() => setStatus(info.lesson, st)}
+                >
+                  {st === 'confirmed' && info.lesson.status !== 'confirmed' ? '✓ אישור השיבוץ' : STATUS_LABELS[st]}
+                </button>
+              ))}
+            </div>
+            {info.lesson.contacts.length > 0 ? (
+              <div className="lesson-info-phones">
+                {info.lesson.contacts.map((c) => (
+                  <div key={c.phone}>
+                    <span>{c.name}{c.relation && c.relation !== c.name && ` (${c.relation})`}</span>
+                    <a href={`tel:${c.phone}`} dir="ltr">📞 {c.phone}</a>
+                  </div>
+                ))}
+              </div>
+            ) : <p className="muted">אין מספר טלפון</p>}
+            {info.lesson.studentNotes && <p className="lesson-info-note"><strong>הערות:</strong> {info.lesson.studentNotes}</p>}
+            {info.lesson.preferred && <p className="lesson-info-note"><strong>זמנים מועדפים:</strong> {info.lesson.preferred}</p>}
+            {info.lesson.lessonNotes && <p className="lesson-info-note"><strong>הערות לשיעור:</strong> {info.lesson.lessonNotes}</p>}
+            {!info.lesson.studentNotes && !info.lesson.lessonNotes && !info.lesson.preferred && <p className="muted">אין הערות</p>}
+            <div className="modal-options">
+              <Link className="btn btn-xs" href={`/students/${info.lesson.studentId}`}>כרטיס תלמיד/ה</Link>
+              <Link className="btn btn-xs" href={`/lessons/${info.lesson.id}`}>עריכת השיעור</Link>
+              <button
+                type="button" className="btn btn-xs btn-danger" disabled={deleting}
+                onClick={() => {
+                  const l = info.lesson;
+                  if (!confirm(`למחוק את השיעור של ${l.student} (${DAYS[l.weekday]} ${fmt(l.start)})?`)) return;
+                  setDeleting(true);
+                  startTransition(async () => {
+                    const res = await removeLesson(l.id);
+                    setDeleting(false);
+                    if (res.ok) {
+                      setInfo(null);
+                      setToast({ ok: true, text: `השיעור של ${l.student} נמחק` });
+                      router.refresh();
+                    } else {
+                      setToast({ ok: false, text: res.error });
+                    }
+                  });
+                }}
+              >
+                {deleting ? 'מוחק...' : 'מחיקת השיעור'}
+              </button>
+            </div>
+            <button type="button" className="btn btn-xs" onClick={() => setInfo(null)}>סגירה</button>
+          </div>
+        </div>
+      )}
+
       {choose && (
         <div className="modal-backdrop" onClick={() => setChoose(null)}>
           <div className="card modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="בחירת כלי">
@@ -342,6 +536,51 @@ export function AssignBoard({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** פאנל שעות עבודה של מורה בלוח הגרירה: רשימה עם מחיקה, ושורת הוספה */
+function HoursPanel({
+  teacher, busy, onAdd, onRemove,
+}: {
+  teacher: BoardTeacher; busy: boolean;
+  onAdd: (weekday: number, start: string, end: string) => void;
+  onRemove: (h: BoardTeacher['hours'][number]) => void;
+}) {
+  const [weekday, setWeekday] = useState(BOARD_DAYS[0]);
+  const [start, setStart] = useState('14:00');
+  const [end, setEnd] = useState('19:00');
+  const hours = [...teacher.hours].sort((a, b) => a.weekday - b.weekday || a.start - b.start);
+  return (
+    <div className="hours-panel">
+      {hours.length > 0 && (
+        <div className="hours-chips">
+          {hours.map((h) => (
+            <span key={h.id} className="chip hours-chip">
+              {DAYS[h.weekday]} {fmt(h.start)}-{fmt(h.end)}
+              <button type="button" className="hours-x" disabled={busy} onClick={() => onRemove(h)}
+                aria-label={`מחיקת ${DAYS[h.weekday]} ${fmt(h.start)}-${fmt(h.end)}`} title="מחיקה">×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="row-form">
+        <label>יום
+          <select value={weekday} onChange={(e) => setWeekday(Number(e.target.value))}>
+            {BOARD_DAYS.map((d) => <option key={d} value={d}>{DAYS[d]}</option>)}
+          </select>
+        </label>
+        <label>משעה
+          <select value={start} onChange={(e) => setStart(e.target.value)}>{QUARTER_TIME_OPTIONS.map((x) => <option key={x}>{x}</option>)}</select>
+        </label>
+        <label>עד שעה
+          <select value={end} onChange={(e) => setEnd(e.target.value)}>{QUARTER_TIME_OPTIONS.map((x) => <option key={x}>{x}</option>)}</select>
+        </label>
+        <button type="button" className="btn btn-primary btn-xs" disabled={busy} onClick={() => onAdd(weekday, start, end)}>
+          {busy ? 'שומר...' : '+ הוספת שעות'}
+        </button>
+      </div>
     </div>
   );
 }

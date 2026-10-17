@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
     { header: 'שם פרטי', value: (s) => s.first_name },
     { header: 'שם משפחה', value: (s) => s.last_name },
     { header: 'סטטוס', width: 12, value: (s) => STUDENT_STATUS_LABELS[s.status] },
+    { header: 'ממתין/ה ל...', width: 24, value: (s) => (s.status === 'waiting' ? s.waiting_reason ?? '' : '') },
     { header: 'מין', width: 8, value: (s) => (s.gender ? GENDER_LABELS[s.gender] : '') },
     { header: 'גיל', width: 8, value: (s) => (s.birth_date ? ageFrom(s.birth_date) : null) },
     { header: 'תאריך לידה', width: 13, value: (s) => (s.birth_date && !s.birth_date_approx ? s.birth_date : '') },

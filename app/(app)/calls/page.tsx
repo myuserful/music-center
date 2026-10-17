@@ -27,18 +27,21 @@ export default async function CallsPage() {
     cards.push({
       id: s.id,
       name: fullName(s),
+      lastName: s.last_name,
+      firstName: s.first_name,
       column,
       attempts: s.call_attempts,
       lastCall: s.last_call_at,
       items: [
         ...lessons.map((l) => ({
-          key: `l${l.id}`, status: l.status,
+          key: `l${l.id}`, status: l.status, weekday: l.weekday,
+          instrument: maps.instrument.get(l.instrument_id)?.name ?? '',
           text: `${maps.instrument.get(l.instrument_id)?.name ?? ''} · ${fullName(maps.teacher.get(l.teacher_id))} · ${DAYS[l.weekday]} ${hhmm(l.start_time)}`,
         })),
         ...enrollments.map((e) => {
           const c = maps.choir.get(e.choir_id);
           return {
-            key: `e${e.id}`, status: e.status,
+            key: `e${e.id}`, status: e.status, weekday: c?.weekday ?? -1, instrument: 'מקהלה',
             text: c ? `מקהלה: ${c.name} · ${DAYS[c.weekday]} ${hhmm(c.start_time)}` : 'מקהלה',
           };
         }),

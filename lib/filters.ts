@@ -13,16 +13,21 @@ export function studentFilters(sp: Params) {
     qDigits: q.replace(/\D/g, ''),
     branch: Number(one(sp.branch)) || null,
     gender: one(sp.gender) as Gender | '',
-    // ברירת מחדל: פעילים ומתלבטים. "all" = כולם
+    // ברירת מחדל: כולם חוץ מלא פעילים (פעילים, מתלבטים וממתינים). "all" = כולם
     status: one(sp.status) as StudentStatus | 'all' | '',
     review: one(sp.review) === '1',
+    // רשימת המתנה: מילים שצריכות להופיע ב"ממתין/ה ל..." (למשל "אורגן שני")
+    wait: one(sp.wait).trim(),
   };
 }
 
 export function filterStudents(all: All, f: ReturnType<typeof studentFilters>) {
-  const { q, qDigits, branch, gender, status, review } = f;
+  const { q, qDigits, branch, gender, status, review, wait } = f;
+  const waitWords = wait.split(/\s+/).filter(Boolean);
   return all.students.filter((s) =>
-    (status === 'all' || (status ? s.status === status : s.status !== 'inactive')) &&
+    // חיפוש לפי "ממתין/ה ל..." מציג רק את רשימת ההמתנה (אלא אם נבחר סטטוס אחר)
+    (status === 'all' || (status ? s.status === status : waitWords.length ? s.status === 'waiting' : s.status !== 'inactive')) &&
+    waitWords.every((w) => (s.waiting_reason ?? '').includes(w)) &&
     (!review || s.needs_review) &&
     (!branch || s.branch_id === branch) &&
     (!gender || s.gender === gender) &&

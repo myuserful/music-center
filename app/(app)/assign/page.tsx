@@ -17,21 +17,31 @@ export default async function AssignPage({ searchParams }: { searchParams: SP })
   const teachers: BoardTeacher[] = all.teachers.filter((t) => t.active).map((t) => ({
     id: t.id,
     name: fullName(t),
-    room: all.roomLabel(t.room_id),
+    room: all.teacherRooms(t.id).join(' · '),
     branches: all.teacherBranchIds(t.id).map((b) => maps.branch.get(b)?.name ?? '').filter(Boolean),
     languages: t.languages,
     instruments: all.teacherInstrumentIds(t.id)
       .filter((i) => i !== choirInstrumentId)
       .map((i) => ({ id: i, name: maps.instrument.get(i)?.name ?? '' })),
     hours: all.hours.filter((h) => h.teacher_id === t.id)
-      .map((h) => ({ weekday: h.weekday, start: toMin(h.start_time), end: toMin(h.end_time) })),
-    lessons: all.lessons.filter((l) => l.teacher_id === t.id).map((l) => ({
-      id: l.id, weekday: l.weekday, start: toMin(l.start_time), status: l.status,
-      studentId: l.student_id, student: fullName(maps.student.get(l.student_id)),
-      instrumentId: l.instrument_id, instrument: maps.instrument.get(l.instrument_id)?.name ?? '',
-    })),
+      .map((h) => ({ id: h.id, weekday: h.weekday, start: toMin(h.start_time), end: toMin(h.end_time) })),
+    lessons: all.lessons.filter((l) => l.teacher_id === t.id).map((l) => {
+      const s = maps.student.get(l.student_id);
+      return {
+        id: l.id, weekday: l.weekday, start: toMin(l.start_time), status: l.status,
+        studentId: l.student_id, student: fullName(s),
+        instrumentId: l.instrument_id, instrument: maps.instrument.get(l.instrument_id)?.name ?? '',
+        age: s ? ageLabel(s.birth_date, s.birth_date_approx) : '',
+        studentNotes: s?.notes ?? '', preferred: s?.preferred_times ?? '', lessonNotes: l.notes,
+        // אנשי קשר עם טלפון (הראשי קודם - כך הם ממוינים ב-loadAll)
+        contacts: all.contacts.filter((c) => c.student_id === l.student_id && c.phone)
+          .map((c) => ({ name: c.name, relation: c.relation, phone: c.phone })),
+      };
+    }),
     choirs: all.choirs.filter((c) => c.teacher_id === t.id).map((c) => ({
       id: c.id, name: c.name, weekday: c.weekday, start: toMin(c.start_time), end: toMin(c.end_time),
+      members: all.enrollments.filter((e) => e.choir_id === c.id)
+        .map((e) => ({ id: e.student_id, name: fullName(maps.student.get(e.student_id)) })),
     })),
   }));
 
@@ -61,7 +71,7 @@ export default async function AssignPage({ searchParams }: { searchParams: SP })
 
   return (
     <>
-      <PageHead title="שיבוץ בגרירה" sub="גוררים תלמיד/ה למשבצת פנויה אצל מורה. כל שיעור חצי שעה ונשמר כ&quot;ממתין לאישור הורים&quot;." />
+      <PageHead title="שיבוץ בגרירה" sub="גוררים תלמיד/ה למשבצת פנויה אצל מורה. כל שיעור חצי שעה ונשמר כ&quot;ממתין לאישור הורים&quot; - מאשרים בלחיצה על ✓ בשיעור." />
       <AssignBoard teachers={teachers} students={students} initialSelected={selected} />
     </>
   );

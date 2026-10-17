@@ -13,7 +13,7 @@ import { fullName } from '@/lib/types';
 export default async function StudentsPage({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
   const f = studentFilters(sp);
-  const { q, branch, gender, status, review } = f;
+  const { q, branch, gender, status, review, wait } = f;
   const db = await createClient();
   const all = await loadAll(db);
   const { maps } = all;
@@ -23,6 +23,9 @@ export default async function StudentsPage({ searchParams }: { searchParams: SP 
   return (
     <>
       <PageHead title="תלמידים" sub={`${students.length} תלמידים`}>
+        <Link className="btn" href="/students?status=waiting">
+          רשימת המתנה ({all.students.filter((s) => s.status === 'waiting').length})
+        </Link>
         <a className="btn" href={`/students/export${queryString(sp)}`} download>הורדה לאקסל</a>
         <Link className="btn btn-primary" href="/students/new">+ תלמיד/ה חדש/ה</Link>
       </PageHead>
@@ -47,10 +50,17 @@ export default async function StudentsPage({ searchParams }: { searchParams: SP 
         <label>
           סטטוס
           <select name="status" defaultValue={status}>
-            <option value="">פעילים ומתלבטים</option>
+            <option value="">פעילים, מתלבטים וממתינים</option>
             {STUDENT_STATUSES.map((x) => <option key={x} value={x}>{STUDENT_STATUS_LABELS[x]}</option>)}
             <option value="all">הכל</option>
           </select>
+        </label>
+        <label>
+          ממתין/ה ל...
+          <input name="wait" defaultValue={wait} list="wait-words" placeholder="למשל: אורגן שני" />
+          <datalist id="wait-words">
+            {[...all.instruments.map((i) => i.name), ...DAYS.slice(0, 6)].map((w) => <option key={w} value={w} />)}
+          </datalist>
         </label>
         <label className="check"><input type="checkbox" name="review" value="1" defaultChecked={review} /> רק לבדיקה</label>
         <button className="btn">סינון</button>
@@ -70,7 +80,10 @@ export default async function StudentsPage({ searchParams }: { searchParams: SP 
                     <td><Link href={`/students/${s.id}`}><strong>{fullName(s) || '(ללא שם)'}</strong></Link>
                       {s.language && s.language !== DEFAULT_LANGUAGE && <div className="muted">{s.language}</div>}
                     </td>
-                    <td><span className={`badge badge-student-${s.status}`}>{STUDENT_STATUS_LABELS[s.status]}</span></td>
+                    <td>
+                      <span className={`badge badge-student-${s.status}`}>{STUDENT_STATUS_LABELS[s.status]}</span>
+                      {s.status === 'waiting' && s.waiting_reason && <div className="muted waiting-reason">{s.waiting_reason}</div>}
+                    </td>
                     <td title={s.birth_date_approx ? 'גיל משוער' : undefined}>{ageLabel(s.birth_date, s.birth_date_approx)}</td>
                     <td>{s.school}</td>
                     <td>{s.branch_id ? maps.branch.get(s.branch_id)?.name : ''}</td>

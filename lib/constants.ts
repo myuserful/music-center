@@ -41,11 +41,12 @@ export const HEALTH_PLANS: Record<HealthFund, string[]> = {
 export const DEFAULT_LANGUAGE = 'עברית';
 export const LANGUAGES = ['עברית', 'אידיש', 'אנגלית', 'צרפתית', 'רוסית', 'ספרדית', 'אמהרית', 'ערבית'];
 
-export type StudentStatus ='active' | 'undecided' | 'inactive';
-export const STUDENT_STATUSES: StudentStatus[] = ['active', 'undecided', 'inactive'];
+export type StudentStatus ='active' | 'undecided' | 'waiting' | 'inactive';
+export const STUDENT_STATUSES: StudentStatus[] = ['active', 'undecided', 'waiting', 'inactive'];
 export const STUDENT_STATUS_LABELS: Record<StudentStatus, string> = {
   active: 'פעיל/ה',
   undecided: 'מתלבט/ת',
+  waiting: 'רשימת המתנה',
   inactive: 'לא פעיל/ה',
 };
 

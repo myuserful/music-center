@@ -4,11 +4,11 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
 import { moveCall } from '@/lib/actions/calls';
-import { CALL_COLUMN_LABELS, CALL_COLUMNS, STATUS_LABELS, type CallColumn, type Status } from '@/lib/constants';
+import { CALL_COLUMN_LABELS, CALL_COLUMNS, DAYS, STATUS_LABELS, type CallColumn, type Status } from '@/lib/constants';
 
 export type CallCard = {
-  id: number; name: string; column: CallColumn; attempts: number; lastCall: string | null;
-  items: { key: string; status: Status; text: string }[];
+  id: number; name: string; lastName: string; firstName: string; column: CallColumn; attempts: number; lastCall: string | null;
+  items: { key: string; status: Status; text: string; instrument: string; weekday: number }[];
   contacts: { id: number; name: string; relation: string; phone: string }[];
 };
 
@@ -18,12 +18,22 @@ const when = (iso: string) =>
   });
 
 /** סדר בעמודה: לא ענו - מי שניסינו הכי מזמן למעלה. אושר - האחרונים למעלה. */
-function sortColumn(column: CallColumn, cards: CallCard[]) {
+type SortBy = 'last_name' | 'last_call';
+
+/** שם משפחה ואז שם פרטי (אחים יוצאים אחד אחרי השני) */
+const byLastName = (a: CallCard, b: CallCard) =>
+  (a.lastName ?? '').localeCompare(b.lastName ?? '', 'he') || (a.firstName ?? '').localeCompare(b.firstName ?? '', 'he');
+
+/**
+ * לפי שם משפחה, או לפי שיחה אחרונה: לא ענו / מתלבטים - מי שהתקשרנו אליו הכי מזמן למעלה, אושר - האחרונים למעלה.
+ * "צריך להתקשר" תמיד לפי שם משפחה (עוד לא התקשרו).
+ */
+function sortColumn(column: CallColumn, cards: CallCard[], sortBy: SortBy) {
   const t = (c: CallCard) => (c.lastCall ? Date.parse(c.lastCall) : 0);
   return [...cards].sort((a, b) =>
-    column === 'confirmed' ? t(b) - t(a) :
-    column === 'to_call' ? a.name.localeCompare(b.name, 'he') :
-    t(a) - t(b));
+    sortBy === 'last_name' || column === 'to_call' ? byLastName(a, b) :
+    column === 'confirmed' ? t(b) - t(a) || byLastName(a, b) :
+    t(a) - t(b) || byLastName(a, b));
 }
 
 export function CallBoard({ cards: initial }: { cards: CallCard[] }) {
@@ -32,14 +42,24 @@ export function CallBoard({ cards: initial }: { cards: CallCard[] }) {
   const [dragId, setDragId] = useState<number | null>(null);
   const [over, setOver] = useState<CallColumn | null>(null);
   const [q, setQ] = useState('');
+  const [fInstrument, setFInstrument] = useState('');
+  const [fDay, setFDay] = useState('');
+  const [sortBy, setSortBy] = useState<SortBy>('last_name');
   const [error, setError] = useState('');
   const [, startTransition] = useTransition();
 
   useEffect(() => setCards(initial), [initial]);
 
   const query = q.trim();
+  // אפשרויות הסינון מתוך השיבוצים שבלוח
+  const instruments = [...new Set(cards.flatMap((c) => c.items.map((i) => i.instrument)).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'he'));
+  const days = [...new Set(cards.flatMap((c) => c.items.map((i) => i.weekday)))].filter((d) => d >= 0).sort();
   const visible = cards.filter((c) =>
-    !query || c.name.includes(query) || c.contacts.some((x) => x.phone.includes(query) || x.name.includes(query)));
+    (!query || c.name.includes(query) || c.contacts.some((x) => x.phone.includes(query) || x.name.includes(query))) &&
+    // כלי ויום: שניהם באותו שיבוץ
+    (!fInstrument && !fDay || c.items.some((i) =>
+      (!fInstrument || i.instrument === fInstrument) && (!fDay || i.weekday === Number(fDay)))));
 
   function place(id: number, column: CallColumn) {
     setDragId(null);
@@ -67,17 +87,34 @@ export function CallBoard({ cards: initial }: { cards: CallCard[] }) {
 
   return (
     <>
-      <div className="task-toolbar">
+      <div className="task-toolbar call-toolbar">
         <input
           type="search" className="call-search" placeholder="חיפוש לפי שם או טלפון"
           value={q} onChange={(e) => setQ(e.target.value)} aria-label="חיפוש"
         />
+        <select value={fInstrument} onChange={(e) => setFInstrument(e.target.value)} aria-label="סינון לפי כלי">
+          <option value="">כל הכלים</option>
+          {instruments.map((i) => <option key={i} value={i}>{i}</option>)}
+        </select>
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value as SortBy)} aria-label="מיון">
+          <option value="last_name">מיון: שם משפחה</option>
+          <option value="last_call">מיון: שיחה אחרונה</option>
+        </select>
+        <select value={fDay} onChange={(e) => setFDay(e.target.value)} aria-label="סינון לפי יום">
+          <option value="">כל הימים</option>
+          {days.map((d) => <option key={d} value={d}>{DAYS[d]}</option>)}
+        </select>
+        {(fInstrument || fDay || q) && (
+          <button type="button" className="btn btn-xs btn-ghost" onClick={() => { setQ(''); setFInstrument(''); setFDay(''); }}>
+            ניקוי סינון
+          </button>
+        )}
         {error && <span className="flash flash-error" role="alert">{error}</span>}
       </div>
 
       <div className="kanban kanban-calls">
         {CALL_COLUMNS.map((column) => {
-          const list = sortColumn(column, visible.filter((c) => c.column === column));
+          const list = sortColumn(column, visible.filter((c) => c.column === column), sortBy);
           return (
             <section
               key={column}

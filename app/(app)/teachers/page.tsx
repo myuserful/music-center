@@ -25,6 +25,7 @@ export default async function TeachersPage({ searchParams }: { searchParams: SP 
   return (
     <>
       <PageHead title="מורים" sub={`${teachers.length} מתוך ${all.teachers.length} מורים`}>
+        <Link className="btn" href="/teachers/print">הדפסת מערכות שעות</Link>
         <a className="btn" href={`/teachers/export${queryString(sp)}`} download>הורדה לאקסל</a>
         <Link className="btn btn-primary" href="/teachers/new">+ מורה חדש/ה</Link>
       </PageHead>
@@ -78,7 +79,7 @@ export default async function TeachersPage({ searchParams }: { searchParams: SP 
       <section className="card table-wrap">
         {teachers.length === 0 ? <Empty>{all.teachers.length === 0 ? 'אין מורים עדיין' : 'לא נמצאו מורים'}</Empty> : (
           <table>
-            <thead><tr><th>שם</th><th>כלים</th><th>סניפים</th><th>מעוניין/ת</th><th>מחיר</th><th>חדר</th><th>ימי עבודה</th><th>שיעורים</th><th>פנויים</th><th>טלפון</th></tr></thead>
+            <thead><tr><th>שם</th><th>כלים</th><th>סניפים</th><th>מעוניין/ת</th><th>מחיר</th><th>חדרים לפי ימים</th><th>ימי עבודה</th><th>שיעורים</th><th>פנויים</th><th>טלפון</th></tr></thead>
             <tbody>
               {teachers.map((t) => {
                 const hours = all.hours.filter((h) => h.teacher_id === t.id);
@@ -94,7 +95,7 @@ export default async function TeachersPage({ searchParams }: { searchParams: SP 
                     <td>{all.teacherBranchIds(t.id).map((b) => all.maps.branch.get(b)?.name).join(', ')}</td>
                     <td>{t.interest && INTEREST_LABELS[t.interest]}</td>
                     <td>{t.hourly_rate !== null && `₪${t.hourly_rate}`}</td>
-                    <td>{all.roomLabel(t.room_id)}</td>
+                    <td>{all.teacherRooms(t.id).map((r) => <div key={r}>{r}</div>)}</td>
                     <td>{days}{weeklyHours > 0 && <span className="muted"> ({weeklyHours} ש&quot;ש)</span>}</td>
                     <td>{all.lessons.filter((l) => l.teacher_id === t.id).length}</td>
                     <td><Link href={`/schedule?teacher=${t.id}`}>{all.teacherFree(t.id).length}</Link></td>

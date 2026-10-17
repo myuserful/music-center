@@ -3,7 +3,9 @@ import { notFound } from 'next/navigation';
 import { BirthDateFields } from '@/components/BirthDateFields';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { HealthFundFields } from '@/components/HealthFundFields';
+import { ReceiptButton } from '@/components/ReceiptButton';
 import { StudentPayments } from '@/components/StudentPayments';
+import { StudentStatusFields } from '@/components/StudentStatusFields';
 import { BackLink, Empty, Flash, PageHead, StatusActions, StatusBadge, type SP } from '@/components/ui';
 import {
   addEnrollment, deleteEnrollment, deleteLesson, setEnrollmentStatus, setLessonStatus,
@@ -11,7 +13,7 @@ import {
 import { deleteContact, deleteStudent, saveContact, saveStudent } from '@/lib/actions/people';
 import {
   CHOIR_CAPACITY, DAYS, DEFAULT_LANGUAGE, LANGUAGES, GENDER_LABELS, PAYMENT_TRACK_LABELS, PAYMENT_TRACKS, STATUS_LABELS, STATUSES,
-  STUDENT_STATUS_LABELS, STUDENT_STATUSES, type Gender,
+  STUDENT_STATUS_LABELS, type Gender,
 } from '@/lib/constants';
 import { loadAll, loadBilling } from '@/lib/data';
 import { createClient } from '@/lib/supabase/server';
@@ -31,8 +33,8 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
   const s: Student | undefined = isNew
     ? {
       id: 0, first_name: '', last_name: '', school: '', birth_date: null, birth_date_approx: false, branch_id: null,
-      requested_instrument_id: null, notes: '', status: 'active', gender: null, health_fund: null, health_plan: '',
-      id_number: '', has_referral: false, hmo_reported: false, preferred_times: '', language: DEFAULT_LANGUAGE,
+      requested_instrument_id: null, notes: '', status: 'active', waiting_reason: '', gender: null, health_fund: null, health_plan: '',
+      id_number: '', three_digits: '', has_referral: false, hmo_reported: false, preferred_times: '', language: DEFAULT_LANGUAGE,
       payment_track: 'unknown', standing_order: false, needs_review: false,
       call_state: 'to_call', call_attempts: 0, last_call_at: null,
     }
@@ -48,11 +50,17 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
     (c) => !enrollments.some((e) => e.choir_id === c.id) &&
       all.enrollments.filter((e) => e.choir_id === c.id).length < CHOIR_CAPACITY,
   );
+  // ברירת מחדל לקבלה: ימי השיעורים והמקהלות
+  const receiptDays = [...new Set([
+    ...lessons.map((l) => l.weekday),
+    ...enrollments.map((e) => maps.choir.get(e.choir_id)?.weekday).filter((d) => d !== undefined),
+  ])].sort();
 
   return (
     <>
       <BackLink href="/students">כל התלמידים</BackLink>
       <PageHead title={isNew ? 'תלמיד/ה חדש/ה' : fullName(s) || '(ללא שם)'} sub={isNew ? undefined : STUDENT_STATUS_LABELS[s.status]}>
+        {!isNew && <ReceiptButton studentId={s.id} days={receiptDays} />}
         {!isNew && <Link className="btn btn-primary" href={`/lessons/new?student=${s.id}`}>+ שיבוץ שיעור</Link>}
       </PageHead>
       <Flash sp={sp} />
@@ -62,12 +70,7 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
         <div className="form-grid">
           <label>שם פרטי<input name="first_name" defaultValue={s.first_name} required /></label>
           <label>שם משפחה<input name="last_name" defaultValue={s.last_name} required /></label>
-          <label>
-            סטטוס
-            <select name="status" defaultValue={s.status}>
-              {STUDENT_STATUSES.map((x) => <option key={x} value={x}>{STUDENT_STATUS_LABELS[x]}</option>)}
-            </select>
-          </label>
+          <StudentStatusFields status={s.status} reason={s.waiting_reason ?? ''} />
           <label>
             מין
             <select name="gender" defaultValue={s.gender ?? ''}>
@@ -76,6 +79,11 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
             </select>
           </label>
           <label>ת&quot;ז<input name="id_number" defaultValue={s.id_number} dir="ltr" inputMode="numeric" /></label>
+          <label>
+            שלוש ספרות
+            <input name="three_digits" defaultValue={s.three_digits} dir="ltr" inputMode="numeric" maxLength={3} pattern="\d{3}"
+              title="3 ספרות" autoComplete="off" />
+          </label>
           <label>מקום לימודים<input name="school" defaultValue={s.school} placeholder="בית ספר / גן" /></label>
           <label>
             שפה

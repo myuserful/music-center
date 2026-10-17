@@ -1,6 +1,6 @@
 import 'server-only';
 import { freeSlots, type Busy } from './availability';
-import { LESSON_MINUTES } from './constants';
+import { DAYS, LESSON_MINUTES } from './constants';
 import { toMin } from './time';
 import type { DB } from './supabase/server';
 import type {
@@ -75,6 +75,16 @@ export async function loadAll(db: DB) {
     const r = id ? maps.room.get(id) : undefined;
     return r ? `${r.name} · ${maps.branch.get(r.branch_id)?.name ?? ''}` : '';
   };
+  /** החדרים של מורה לפי ימים (החדר שייך לשעות העבודה ביום מסוים), למשל "שני: חדר 1 · גינות דוד" */
+  const teacherRooms = (teacherId: number) => {
+    const seen = new Set<string>();
+    return data.hours.filter((h) => h.teacher_id === teacherId && h.room_id).flatMap((h) => {
+      const label = `${DAYS[h.weekday]}: ${roomLabel(h.room_id)}`;
+      if (seen.has(label)) return [];
+      seen.add(label);
+      return [label];
+    });
+  };
   const primaryContact = (studentId: number) => data.contacts.find((c) => c.student_id === studentId);
   const teacherInstrumentIds = (teacherId: number) =>
     data.teacherInstruments.filter((x) => x.teacher_id === teacherId).map((x) => x.instrument_id);
@@ -97,7 +107,7 @@ export async function loadAll(db: DB) {
   ]);
   const unassigned = data.students.filter((s) => s.status === 'active' && !assignedStudentIds.has(s.id));
 
-  return { ...data, maps, roomLabel, primaryContact, teacherInstrumentIds, teacherBranchIds, teacherFree, unassigned };
+  return { ...data, maps, roomLabel, teacherRooms, primaryContact, teacherInstrumentIds, teacherBranchIds, teacherFree, unassigned };
 }
 
 export type All = Awaited<ReturnType<typeof loadAll>>;

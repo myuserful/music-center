@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
     { header: 'ימים בשבוע', width: 11, value: (t) => t.days_per_week },
     { header: 'שפות', width: 14, value: (t) => t.languages.join(', ') },
     { header: 'בנים עד 9', width: 10, value: (t) => yesNo(t.teaches_young_boys) },
-    { header: 'חדר קבוע', width: 16, value: (t) => all.roomLabel(t.room_id) },
+    { header: 'חדרים לפי ימים', width: 30, value: (t) => all.teacherRooms(t.id).join(', ') },
     { header: 'שעות עבודה', width: 22, value: hours },
     { header: 'שיעורים', width: 9, value: (t) => all.lessons.filter((l) => l.teacher_id === t.id).length },
     { header: 'פעיל/ה', width: 8, value: (t) => yesNo(t.active) },

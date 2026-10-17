@@ -385,6 +385,23 @@ tr.inactive td { opacity: 0.5; }
 }
 .slot:hover { color: var(--ink); transform: translateY(-1px); box-shadow: 0 4px 10px rgb(30 34 48 / 0.1); }
 .slot small { display: block; color: var(--muted); }
+.slot-movable { cursor: pointer; }
+.slot-name { display: block; font-weight: 600; }
+.slot-age { font-weight: 400; color: var(--muted); }
+.slot-note { color: var(--blue); font-weight: 400; }
+.slot-movable { position: relative; }
+.slot-confirm {
+  position: absolute; top: 3px; inset-inline-end: 3px;
+  width: 20px; height: 20px; padding: 0; border-radius: 50%;
+  border: 1px solid var(--mint); background: var(--card); color: var(--mint-dark);
+  font-size: 0.75rem; line-height: 1; cursor: pointer;
+}
+.slot-confirm:hover { background: var(--mint-dark); color: #fff; }
+.slot-confirm:disabled { opacity: 0.5; cursor: wait; }
+.lesson-info-status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.lesson-info h3 { margin: 0; }
+.lesson-info p { margin: 0; }
+.lesson-info-note { white-space: pre-line; font-size: 0.9rem; background: var(--bg); border-radius: var(--radius-sm); padding: 8px 10px; }
 .slot-pending { background: var(--pending-bg); border-color: var(--yellow); }
 .slot-undecided { background: var(--undecided-bg); border-color: var(--blue); }
 .slot-confirmed { background: var(--confirmed-bg); border-color: var(--mint); }
@@ -462,6 +479,7 @@ tr.inactive td { opacity: 0.5; }
 /* סטטוס תלמיד */
 .badge-student-active { background: var(--confirmed-bg); color: var(--confirmed); }
 .badge-student-undecided { background: var(--undecided-bg); color: var(--undecided); }
+.badge-student-waiting { background: var(--pending-bg); color: var(--pending); }
 .badge-student-inactive { background: #efeef5; color: var(--muted); }
 .badge-review { background: var(--undecided-bg); color: var(--undecided); }
 
@@ -498,6 +516,11 @@ tr.inactive td { opacity: 0.5; }
 .teacher-boards { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; }
 .teacher-board { margin: 0; padding: 14px; }
 .teacher-board-head { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; margin-bottom: 8px; }
+.hours-panel { background: var(--bg); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 10px; }
+.hours-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.hours-chip { display: inline-flex; align-items: center; gap: 4px; }
+.hours-x { border: 0; background: none; cursor: pointer; color: var(--danger); font-size: 1rem; line-height: 1; padding: 0 2px; }
+.hours-x:disabled { opacity: 0.4; cursor: default; }
 .mini-board { min-width: 0; }
 .mini-board td { height: 34px; }
 .mini-board th:first-child { width: 48px; }
@@ -600,6 +623,9 @@ tr.inactive td { opacity: 0.5; }
 .kanban-call-confirmed { border-top-color: var(--confirmed); }
 .kanban-col.over { background: var(--brand-soft); }
 .call-search { max-width: 280px; }
+.call-toolbar { justify-content: flex-start; gap: 8px; }
+.call-toolbar select { width: auto; }
+.call-toolbar .flash { margin-inline-start: auto; }
 .call-items { list-style: none; margin: 6px 0 0; padding: 0; font-size: 0.82rem; color: var(--ink); }
 .call-items li { display: flex; gap: 6px; align-items: baseline; }
 .call-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--pending); }
@@ -687,3 +713,66 @@ tr.inactive td { opacity: 0.5; }
 .skeleton-card { height: 320px; border-radius: var(--radius); }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+
+/* טלפונים בחלון פרטי השיעור */
+.lesson-info-phones { display: flex; flex-direction: column; gap: 4px; background: var(--brand-soft); border-radius: 8px; padding: 8px 10px; }
+.lesson-info-phones div { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.lesson-info-phones a { font-weight: 600; }
+
+/* גרירה למקהלה */
+.board td.choir-drop { cursor: copy; vertical-align: top; }
+.board td.choir-drop .slot { height: 100%; }
+.board td.choir-drop.ready .slot { outline: 2px dashed var(--accent); }
+.board td.choir-drop.over .slot { outline: 3px solid var(--accent); filter: brightness(0.96); }
+.board td.choir-drop.full { cursor: not-allowed; }
+.choir-members { display: block; margin-top: 4px; white-space: normal; }
+
+/* ---- קופות חולים ---- */
+.fund-maccabi { --tone: var(--blue); --tone-soft: var(--blue-soft); }
+.fund-clalit { --tone: var(--mint-dark); --tone-soft: var(--mint-soft); }
+.fund-leumit { --tone: var(--yellow-dark); --tone-soft: var(--yellow-soft); }
+.fund-meuhedet { --tone: var(--coral); --tone-soft: var(--coral-soft); }
+.fund-private { --tone: var(--muted); --tone-soft: #eef0f5; }
+.fund-plans { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 4px; }
+.fund-plans .chip { margin: 0; font-size: 0.74rem; }
+.fund-num { font-weight: 600; font-variant-numeric: tabular-nums; }
+.fund-num-ok { color: var(--confirmed); }
+.fund-num-warn { color: var(--pending); }
+.fund-total td { background: var(--bg); font-weight: 600; }
+.fund-bulk { display: flex; gap: 8px; flex-wrap: wrap; }
+.fund-on { background: var(--confirmed-bg); border-color: transparent; }
+.waiting-reason { font-size: 0.8rem; margin-top: 3px; max-width: 220px; }
+
+/* ---- מערכות שעות להדפסה ---- */
+.print-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.print-head h2 { margin: 0; }
+.print-day h3 { margin: 16px 0 6px; font-size: 1rem; }
+.print-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.print-table th, .print-table td { border: 1px solid var(--line); padding: 6px 8px; text-align: start; vertical-align: top; }
+.print-table th { background: #f5f7fb; }
+.nowrap { white-space: nowrap; }
+
+@media print {
+  @page { size: A4; margin: 12mm; }
+  body { background: #fff; }
+  .sidebar, .no-print { display: none !important; }
+  .shell { display: block; }
+  .main { padding: 0; }
+  .print-sheet { break-after: page; border: 0; box-shadow: none; padding: 0; margin: 0; }
+  .print-sheet:last-child { break-after: auto; }
+  .print-table { font-size: 10.5pt; }
+  .print-table tr { break-inside: avoid; }
+  .print-table th, .print-table td { border-color: #999; }
+  .print-table th { background: #eee; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
+/* הפקת קבלה */
+.receipt-dialog {
+  width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 22px;
+  border: 0; border-radius: var(--radius); box-shadow: 0 20px 60px rgb(0 0 0 / 0.25);
+}
+.receipt-dialog::backdrop { background: rgb(20 20 40 / 0.4); }
+.receipt-days { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+.receipt-days legend { padding: 0; margin-bottom: 6px; }
+.receipt-dates { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 16px; }
+.receipt-form .flash { margin: 14px 0 0; }
