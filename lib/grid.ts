@@ -5,7 +5,7 @@ import { overlaps, START_STEP } from './time';
 type Span = { weekday: number; start: number; end: number };
 
 export type GridCell =
-  | { kind: 'lesson'; index: number; span: number }
+  | { kind: 'lesson'; index: number; span: number; others: number[] } // others: שיעור בזוג - עוד שיעורים באותה משבצת
   | { kind: 'choir'; index: number; span: number }
   | { kind: 'free'; span: number } // משבצת שיעור פנויה
   | { kind: 'covered' } // המשך של תא מהשורה הקודמת (rowSpan)
@@ -45,7 +45,8 @@ export function teacherGrid(
       const li = lessons.findIndex((l) => l.weekday === d && l.start >= m && l.start < m + START_STEP);
       if (li >= 0) {
         coveredUntil = lessons[li].start + LESSON_MINUTES;
-        cells[ri][di] = { kind: 'lesson', index: li, span: span(m, coveredUntil) };
+        const others = lessons.flatMap((l, i) => (i !== li && l.weekday === d && l.start === lessons[li].start ? [i] : []));
+        cells[ri][di] = { kind: 'lesson', index: li, span: span(m, coveredUntil), others };
         return;
       }
       const ci = choirs.findIndex((c) => c.weekday === d && c.start >= m && c.start < m + START_STEP);

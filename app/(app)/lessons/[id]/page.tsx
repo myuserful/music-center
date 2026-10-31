@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { BackLink, Flash, one, PageHead, RoomOptions, type SP } from '@/components/ui';
-import { deleteLesson, saveLesson } from '@/lib/actions/assignments';
+import { addPairStudent, deleteLesson, saveLesson } from '@/lib/actions/assignments';
 import { BOARD_DAYS, CHOIR_INSTRUMENT, DAYS, STATUS_LABELS, STATUSES } from '@/lib/constants';
 import { loadAll } from '@/lib/data';
 import { createClient } from '@/lib/supabase/server';
@@ -26,6 +26,8 @@ export default async function LessonPage({ params, searchParams }: { params: Pro
         instrument_id: student?.requested_instrument_id ?? undefined,
         weekday: one(sp.day) ? Number(one(sp.day)) : undefined,
         start_time: one(sp.time) || undefined,
+        at_home: one(sp.home) === '1',
+        home_slot: Number(one(sp.slot)) || null,
         status: 'pending',
         notes: '',
       }
@@ -35,6 +37,10 @@ export default async function LessonPage({ params, searchParams }: { params: Pro
   const teacher = l.teacher_id ? maps.teacher.get(l.teacher_id) : undefined;
   const here = isNew ? `/lessons/new?${new URLSearchParams(Object.entries(sp).filter(([k]) => !['error', 'ok'].includes(k)).map(([k, v]) => [k, one(v)])).toString()}` : `/lessons/${id}`;
   const after = one(sp.after);
+
+  // שיעור בזוג: מי עוד בשיעור (אותו מורה, יום ושעה)
+  const partners = isNew || l.at_home ? [] : all.lessons.filter((x) => x.id !== l.id && !x.at_home && x.teacher_id === l.teacher_id
+    && x.weekday === l.weekday && x.start_time === l.start_time);
 
   // עזרה לבחירה: מקומות פנויים של המורה שנבחר
   const free = teacher ? all.teacherFree(teacher.id) : [];
@@ -78,6 +84,17 @@ export default async function LessonPage({ params, searchParams }: { params: Pro
             </select>
           </label>
           <label>
+            מיקום
+            <select name="at_home" defaultValue={l.at_home ? '1' : '0'}>
+              <option value="0">במרכז (לפי יום ושעה)</option>
+              <option value="1">בבית המורה (לא תופס שעה)</option>
+            </select>
+          </label>
+          <label>
+            מס׳ משבצת בבית
+            <input type="number" name="home_slot" min={1} defaultValue={l.home_slot ?? ''} placeholder="רק ללימוד בבית" />
+          </label>
+          <label>
             חדר
             <select name="room_id" defaultValue={l.room_id ?? ''}>
               <option value="">החדר הקבוע של המורה</option>
@@ -86,14 +103,14 @@ export default async function LessonPage({ params, searchParams }: { params: Pro
           </label>
           <label>
             יום
-            <select name="weekday" defaultValue={l.weekday ?? ''} required>
+            <select name="weekday" defaultValue={l.weekday ?? ''}>
               <option value="">בחירה...</option>
               {BOARD_DAYS.map((d) => <option key={d} value={d}>{DAYS[d]}</option>)}
             </select>
           </label>
           <label>
             שעה
-            <select name="start_time" defaultValue={l.start_time ? hhmm(l.start_time) : ''} required>
+            <select name="start_time" defaultValue={l.start_time ? hhmm(l.start_time) : ''}>
               <option value="">בחירה...</option>
               {TIME_OPTIONS.map((x) => <option key={x}>{x}</option>)}
             </select>
@@ -110,6 +127,41 @@ export default async function LessonPage({ params, searchParams }: { params: Pro
           <button className="btn btn-primary">שמירה</button>
         </div>
       </form>
+
+      {!isNew && !l.at_home && (
+        <section className="card" id="pair">
+          <h3 style={{ marginBottom: 8 }}>👥 שיעור בזוג</h3>
+          {partners.length > 0 ? (
+            <p>
+              בשיעור הזה לומדים יחד:{' '}
+              {partners.map((p) => (
+                <span key={p.id}>
+                  <a href={`/students/${p.student_id}`}>{fullName(maps.student.get(p.student_id))}</a>
+                  {' '}(<a href={`/lessons/${p.id}`}>השיעור שלו/ה</a>)
+                </span>
+              ))}
+              . כל אחד/ת משלם/ת על 3 שיעורים מכל 4, והרביעי חינם. למורה זה נספר כשיעור אחד.
+              <br /><span className="muted">כדי לפרק את הזוג: מוחקים או מזיזים את השיעור של אחד/ת מהם, והשני/ה חוזר/ת לשיעור רגיל.</span>
+            </p>
+          ) : (
+            <form action={addPairStudent} className="row-form">
+              <input type="hidden" name="id" value={id} />
+              <input type="hidden" name="back" value={here} />
+              <label>
+                צירוף תלמיד/ה לשיעור הזה
+                <select name="student_id" required defaultValue="">
+                  <option value="">בחירה...</option>
+                  {all.students.filter((s) => s.status !== 'inactive' && s.id !== l.student_id).map((s) => (
+                    <option key={s.id} value={s.id}>{fullName(s)}</option>
+                  ))}
+                </select>
+              </label>
+              <button className="btn btn-primary">צירוף לשיעור בזוג</button>
+              <span className="muted">שניהם לומדים יחד באותה שעה. כל אחד/ת משלם/ת על 3 שיעורים מכל 4, והרביעי חינם.</span>
+            </form>
+          )}
+        </section>
+      )}
 
       {teacher && free.length > 0 && (
         <section className="card">

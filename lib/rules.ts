@@ -10,6 +10,8 @@ type ChoirTime = { weekday: number; start_time: string; end_time: string };
 type LessonInput = {
   student_id: number; teacher_id: number; instrument_id: number; room_id: number;
   weekday: number; start_time: string;
+  /** שיעור בזוג: השיעור של בן/בת הזוג (אותו מורה ושעה) לא נחשב התנגשות */
+  pair?: boolean;
 };
 
 /** בדיקות שיבוץ שיעור פרטי. מחזיר הודעת שגיאה בעברית או null */
@@ -21,7 +23,7 @@ export async function validateLesson(db: DB, l: LessonInput, excludeId?: number)
   const [hours, teaches, clash, choirs, studentChoirs] = await Promise.all([
     db.from('teacher_hours').select('weekday,start_time,end_time').eq('teacher_id', l.teacher_id).eq('weekday', l.weekday),
     db.from('teacher_instruments').select('teacher_id').eq('teacher_id', l.teacher_id).eq('instrument_id', l.instrument_id),
-    db.from('lessons').select('id,teacher_id,room_id,student_id,start_time')
+    db.from('lessons').select('*')
       .eq('weekday', l.weekday)
       .or(`teacher_id.eq.${l.teacher_id},room_id.eq.${l.room_id},student_id.eq.${l.student_id}`)
       .neq('id', excludeId ?? -1),
@@ -41,6 +43,8 @@ export async function validateLesson(db: DB, l: LessonInput, excludeId?: number)
 
   // שיעורים חופפים (גם כשהם לא מתחילים באותה שעה, למשל 16:00 ו-16:15)
   const overlapping = (clash.data ?? []).filter((c) => {
+    // בן/בת הזוג באותו שיעור
+    if (l.pair && c.pair && c.teacher_id === l.teacher_id && toMin(c.start_time) === start && c.student_id !== l.student_id) return false;
     const s = toMin(c.start_time);
     return overlaps(start, end, s, s + LESSON_MINUTES);
   });
@@ -57,6 +61,46 @@ export async function validateLesson(db: DB, l: LessonInput, excludeId?: number)
     if (overlaps(start, end, toMin(e.choir.start_time), toMin(e.choir.end_time)))
       return 'התלמיד/ה במקהלה בשעה זו';
   }
+  return null;
+}
+
+/**
+ * צירוף תלמיד/ה שני/ה לשיעור קיים (שיעור בזוג): בשיעור יש רק תלמיד/ה אחד/ת, והתלמיד/ה החדש/ה פנוי/ה באותה שעה
+ */
+export async function validatePairPartner(
+  db: DB, l: { teacher_id: number; weekday: number; start_time: string }, studentId: number,
+): Promise<string | null> {
+  const start = toMin(l.start_time);
+  const end = start + LESSON_MINUTES;
+  const [inSlot, mine, studentChoirs] = await Promise.all([
+    db.from('lessons').select('student_id').eq('teacher_id', l.teacher_id).eq('weekday', l.weekday).eq('start_time', l.start_time),
+    db.from('lessons').select('start_time').eq('student_id', studentId).eq('weekday', l.weekday),
+    db.from('choir_enrollments').select('choir:choirs!inner(weekday,start_time,end_time)')
+      .eq('student_id', studentId).eq('choir.weekday', l.weekday),
+  ]);
+  const slot = inSlot.data ?? [];
+  if (slot.some((x) => x.student_id === studentId)) return 'התלמיד/ה כבר בשיעור הזה';
+  if (slot.length >= 2) return 'בשיעור בזוג יש כבר שני תלמידים';
+  if ((mine.data ?? []).some((x) => x.start_time && overlaps(start, end, toMin(x.start_time), toMin(x.start_time) + LESSON_MINUTES)))
+    return 'לתלמיד/ה כבר יש שיעור בשעה זו';
+  for (const e of (studentChoirs.data ?? []) as unknown as { choir: ChoirTime }[]) {
+    if (overlaps(start, end, toMin(e.choir.start_time), toMin(e.choir.end_time))) return 'התלמיד/ה במקהלה בשעה זו';
+  }
+  return null;
+}
+
+type HomeLessonInput = { student_id: number; teacher_id: number; instrument_id: number; home_slot: number };
+
+/** בדיקות לימוד בבית המורה: המורה מלמד/ת את הכלי, ומספר המשבצת פנוי אצלו/ה */
+export async function validateHomeLesson(db: DB, l: HomeLessonInput, excludeId?: number): Promise<string | null> {
+  if (!Number.isInteger(l.home_slot) || l.home_slot < 1) return 'מספר משבצת לא תקין';
+  const [teaches, taken] = await Promise.all([
+    db.from('teacher_instruments').select('teacher_id').eq('teacher_id', l.teacher_id).eq('instrument_id', l.instrument_id),
+    db.from('lessons').select('id').eq('teacher_id', l.teacher_id).eq('at_home', true).eq('home_slot', l.home_slot)
+      .neq('id', excludeId ?? -1),
+  ]);
+  if (!teaches.data?.length) return 'המורה לא מלמד/ת את הכלי הזה';
+  if (taken.data?.length) return `משבצת ${l.home_slot} בבית המורה כבר תפוסה`;
   return null;
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activityDates, activityDays, shortDate } from './activityDays';
+import { activityDates, activityDays, offName, shortDate, weekdayDates } from './activityDays';
 
 describe('activityDates', () => {
   it('starts at the beginning of the year', () => {
@@ -22,6 +22,27 @@ describe('activityDates', () => {
   it('matches the number of Mondays in the calendar table', () => {
     expect(activityDays([1]).length).toBe(36);
   });
+});
+
+describe('weekdayDates', () => {
+  it('allows Thursday and past dates outside the activity year', () => {
+    expect(weekdayDates([4], '2026-09-01', 3)).toEqual(['2026-09-03', '2026-09-10', '2026-09-17']);
+  });
+
+  it('skips holidays only when asked', () => {
+    expect(weekdayDates([1], '2026-12-01', 3)).toEqual(['2026-12-14', '2026-12-21', '2026-12-28']);
+    expect(weekdayDates([1], '2026-12-01', 2, false)).toEqual(['2026-12-07', '2026-12-14']);
+  });
+
+  it('returns nothing without days or a valid start', () => {
+    expect(weekdayDates([], '2026-10-18', 3)).toEqual([]);
+    expect(weekdayDates([0], '', 3)).toEqual([]);
+  });
+});
+
+it('offName', () => {
+  expect(offName('2026-12-07')).toBe('חנוכה');
+  expect(offName('2026-12-14')).toBe('');
 });
 
 it('shortDate', () => {

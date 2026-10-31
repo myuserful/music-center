@@ -3,13 +3,20 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
+import { FamilyInfo, type FamilyInfoMember } from '@/components/FamilyInfo';
 import { moveCall } from '@/lib/actions/calls';
 import { CALL_COLUMN_LABELS, CALL_COLUMNS, DAYS, STATUS_LABELS, type CallColumn, type Status } from '@/lib/constants';
 
+/** כרטיס אחד לאחים שנמצאים באותה עמודה (או לתלמיד/ה בלי אחים) */
 export type CallCard = {
-  id: number; name: string; lastName: string; firstName: string; column: CallColumn; attempts: number; lastCall: string | null;
+  key: string; members: { id: number; firstName: string }[]; name: string; lastName: string; firstName: string; column: CallColumn; attempts: number; lastCall: string | null;
   items: { key: string; status: Status; text: string; instrument: string; weekday: number }[];
   contacts: { id: number; name: string; relation: string; phone: string }[];
+  /** ימי הלימוד של כל המשפחה, גם של אחים שלא בכרטיס הזה */
+  familyDays: number[];
+  info: FamilyInfoMember[];
+  /** עוד דברים לבקש באותה שיחה (פרטים חסרים) */
+  alsoAbout: string[];
 };
 
 const when = (iso: string) =>
@@ -39,7 +46,7 @@ function sortColumn(column: CallColumn, cards: CallCard[], sortBy: SortBy) {
 export function CallBoard({ cards: initial }: { cards: CallCard[] }) {
   const router = useRouter();
   const [cards, setCards] = useState(initial);
-  const [dragId, setDragId] = useState<number | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
   const [over, setOver] = useState<CallColumn | null>(null);
   const [q, setQ] = useState('');
   const [fInstrument, setFInstrument] = useState('');
@@ -54,28 +61,31 @@ export function CallBoard({ cards: initial }: { cards: CallCard[] }) {
   // אפשרויות הסינון מתוך השיבוצים שבלוח
   const instruments = [...new Set(cards.flatMap((c) => c.items.map((i) => i.instrument)).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, 'he'));
-  const days = [...new Set(cards.flatMap((c) => c.items.map((i) => i.weekday)))].filter((d) => d >= 0).sort();
+  const days = [...new Set(cards.flatMap((c) => c.familyDays))].sort();
   const visible = cards.filter((c) =>
     (!query || c.name.includes(query) || c.contacts.some((x) => x.phone.includes(query) || x.name.includes(query))) &&
     // כלי ויום: שניהם באותו שיבוץ
-    (!fInstrument && !fDay || c.items.some((i) =>
-      (!fInstrument || i.instrument === fInstrument) && (!fDay || i.weekday === Number(fDay)))));
+    // כלי ויום יחד: באותו שיבוץ. יום לבד: מספיק שאחד האחים לומד ביום הזה
+    (!fInstrument ? !fDay || c.familyDays.includes(Number(fDay)) : c.items.some((i) =>
+      i.instrument === fInstrument && (!fDay || i.weekday === Number(fDay)))));
 
-  function place(id: number, column: CallColumn) {
+  function place(id: string, column: CallColumn) {
     setDragId(null);
     setOver(null);
-    const card = cards.find((c) => c.id === id);
+    const card = cards.find((c) => c.key === id);
     if (!card || card.column === column) return;
 
     const before = cards;
     const now = new Date().toISOString();
-    setCards(cards.map((c) => (c.id !== id ? c :
+    setCards(cards.map((c) => (c.key !== id ? c :
       column === 'to_call' ? { ...c, column } :
       column === 'no_answer' ? { ...c, column, attempts: c.attempts + 1, lastCall: now } :
       { ...c, column, attempts: 0, lastCall: now })));
     setError('');
     startTransition(async () => {
-      const res = await moveCall(id, column);
+      // כל האחים בכרטיס עוברים יחד (זו אותה שיחה)
+      const results = await Promise.all(card.members.map((m) => moveCall(m.id, column)));
+      const res = results.find((r) => !r.ok) ?? { ok: true as const };
       if (!res.ok) {
         setCards(before);
         setError(res.error);
@@ -140,14 +150,23 @@ export function CallBoard({ cards: initial }: { cards: CallCard[] }) {
                 {list.length === 0 && <p className="empty">גוררים לכאן תלמידים</p>}
                 {list.map((c) => (
                   <article
-                    key={c.id}
-                    className={`task-card call-card ${dragId === c.id ? 'dragging' : ''}`}
+                    key={c.key}
+                    className={`task-card call-card ${dragId === c.key ? 'dragging' : ''}`}
                     draggable
-                    onDragStart={(e) => { setDragId(c.id); e.dataTransfer.effectAllowed = 'move'; }}
+                    onDragStart={(e) => { setDragId(c.key); e.dataTransfer.effectAllowed = 'move'; }}
                     onDragEnd={() => { setDragId(null); setOver(null); }}
                   >
                     <div className="task-card-top">
-                      <Link href={`/students/${c.id}`} className="task-title" draggable={false}>{c.name}</Link>
+                      {c.members.length === 1
+                        ? <Link href={`/students/${c.members[0].id}`} className="task-title" draggable={false}>{c.name}</Link>
+                        : (
+                          <span className="task-title">
+                            {c.name}:{' '}
+                            {c.members.map((m, i) => (
+                              <span key={m.id}>{i > 0 && ', '}<Link href={`/students/${m.id}`} draggable={false}>{m.firstName}</Link></span>
+                            ))}
+                          </span>
+                        )}
                       {c.column === 'no_answer' && c.attempts > 0 && (
                         <span className="badge badge-pending">לא ענו ×{c.attempts}</span>
                       )}
@@ -162,6 +181,10 @@ export function CallBoard({ cards: initial }: { cards: CallCard[] }) {
                       ))}
                     </ul>
 
+                    {c.alsoAbout.length > 0 && (
+                      <p className="call-also">גם בשיחה: {c.alsoAbout.join(' · ')}</p>
+                    )}
+
                     {c.contacts.length === 0 ? <p className="call-phone muted">אין טלפון</p> : c.contacts.map((x) => (
                       <p key={x.id} className="call-phone">
                         {x.name}{x.relation ? ` (${x.relation})` : ''} ·{' '}
@@ -175,8 +198,9 @@ export function CallBoard({ cards: initial }: { cards: CallCard[] }) {
 
                     {/* העברה בלחיצה (גם בטלפון, בלי גרירה) */}
                     <div className="task-move">
+                      <FamilyInfo title={c.name} members={c.info} />
                       {CALL_COLUMNS.filter((s) => s !== c.column).map((s) => (
-                        <button key={s} type="button" className="btn btn-xs btn-ghost" onClick={() => place(c.id, s)}>
+                        <button key={s} type="button" className="btn btn-xs btn-ghost" onClick={() => place(c.key, s)}>
                           ← {CALL_COLUMN_LABELS[s]}
                         </button>
                       ))}

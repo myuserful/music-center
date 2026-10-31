@@ -1,33 +1,47 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { CertificateList } from '@/components/CertificateList';
 import { BirthDateFields } from '@/components/BirthDateFields';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { HealthFundFields } from '@/components/HealthFundFields';
+import { StudentHistory } from '@/components/LessonHistory';
 import { ReceiptButton } from '@/components/ReceiptButton';
-import { StudentPayments } from '@/components/StudentPayments';
+import { StudentAccount } from '@/components/StudentAccount';
 import { StudentStatusFields } from '@/components/StudentStatusFields';
-import { BackLink, Empty, Flash, PageHead, StatusActions, StatusBadge, type SP } from '@/components/ui';
+import { BackLink, Empty, Flash, one, PageHead, StatusActions, StatusBadge, type SP } from '@/components/ui';
+import { isoDate } from '@/lib/age';
+import { attendedDates, isClosed } from '@/lib/day';
 import {
   addEnrollment, deleteEnrollment, deleteLesson, setEnrollmentStatus, setLessonStatus,
 } from '@/lib/actions/assignments';
 import { deleteContact, deleteStudent, saveContact, saveStudent } from '@/lib/actions/people';
+import { linkFromForm, unlinkFromForm } from '@/lib/actions/siblings';
 import {
-  CHOIR_CAPACITY, DAYS, DEFAULT_LANGUAGE, LANGUAGES, GENDER_LABELS, PAYMENT_TRACK_LABELS, PAYMENT_TRACKS, STATUS_LABELS, STATUSES,
+  BILLABLE, CHOIR_CAPACITY, DAYS, DEFAULT_LANGUAGE, LANGUAGES, GENDER_LABELS, PAYMENT_TRACK_LABELS, PAYMENT_TRACKS, STATUS_LABELS, STATUSES,
   STUDENT_STATUS_LABELS, type Gender,
 } from '@/lib/constants';
-import { loadAll, loadBilling } from '@/lib/data';
+import { loadAll, loadBilling, loadCertificates, loadHistory, loadReceipts } from '@/lib/data';
+import { studentEmail } from '@/lib/mail';
+import { normalizePhone, siblingsOf } from '@/lib/siblings';
 import { createClient } from '@/lib/supabase/server';
+import { sumitConfigured } from '@/lib/sumit';
 import { hhmm } from '@/lib/time';
-import { fullName, type Student } from '@/lib/types';
+import { fullName, isTimed, lessonWhen, type Student } from '@/lib/types';
 
 export default async function StudentPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
   const [{ id }, sp] = await Promise.all([params, searchParams]);
   const db = await createClient();
   const isNew = id === 'new';
   // שתי הטעינות במקביל (כל פנייה למסד לוקחת זמן ברשת)
-  const [all, loadedBilling] = await Promise.all([
+  const month = one(sp.month) || isoDate(new Date()).slice(0, 7);
+  const known = !isNew && !Number.isNaN(Number(id));
+  const [all, loadedBilling, history, receipts, certificates] = await Promise.all([
     loadAll(db),
-    isNew || Number.isNaN(Number(id)) ? null : loadBilling(db, Number(id)),
+    known ? loadBilling(db, Number(id)) : null,
+    // כל ההיסטוריה: גם לתצוגה לפי חודש וגם לאישור הקבלה
+    known ? loadHistory(db, { student: Number(id) }) : null,
+    known ? loadReceipts(db, Number(id)) : null,
+    known ? loadCertificates(db, Number(id)) : null,
   ]);
   const { maps } = all;
   const s: Student | undefined = isNew
@@ -35,6 +49,7 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
       id: 0, first_name: '', last_name: '', school: '', birth_date: null, birth_date_approx: false, branch_id: null,
       requested_instrument_id: null, notes: '', status: 'active', waiting_reason: '', gender: null, health_fund: null, health_plan: '',
       id_number: '', three_digits: '', has_referral: false, hmo_reported: false, preferred_times: '', language: DEFAULT_LANGUAGE,
+      contract_signed: false, card_on_file: false, email: '', no_email: false, family_id: null,
       payment_track: 'unknown', standing_order: false, needs_review: false,
       call_state: 'to_call', call_attempts: 0, last_call_at: null,
     }
@@ -52,7 +67,7 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
   );
   // ברירת מחדל לקבלה: ימי השיעורים והמקהלות
   const receiptDays = [...new Set([
-    ...lessons.map((l) => l.weekday),
+    ...lessons.filter(isTimed).map((l) => l.weekday),
     ...enrollments.map((e) => maps.choir.get(e.choir_id)?.weekday).filter((d) => d !== undefined),
   ])].sort();
 
@@ -60,7 +75,12 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
     <>
       <BackLink href="/students">כל התלמידים</BackLink>
       <PageHead title={isNew ? 'תלמיד/ה חדש/ה' : fullName(s) || '(ללא שם)'} sub={isNew ? undefined : STUDENT_STATUS_LABELS[s.status]}>
-        {!isNew && <ReceiptButton studentId={s.id} days={receiptDays} />}
+        {!isNew && (
+          <ReceiptButton
+            studentId={s.id} days={receiptDays} gender={s.gender}
+            attended={attendedDates(history!.lessons, history!.closures)} price={Number(loadedBilling!.settings.price_maccabi_full)}
+          />
+        )}
         {!isNew && <Link className="btn btn-primary" href={`/lessons/new?student=${s.id}`}>+ שיבוץ שיעור</Link>}
       </PageHead>
       <Flash sp={sp} />
@@ -113,10 +133,16 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
           <label>
             מסלול תשלום
             <select name="payment_track" defaultValue={s.payment_track}>
+              {/* ערך ישן מלפני 0041 (מכבי / התחייבות): מוצג כמו שהוא כדי ששמירה לא תשנה אותו */}
+              {!PAYMENT_TRACKS.includes(s.payment_track) && <option value={s.payment_track}>{s.payment_track} (ישן)</option>}
               {PAYMENT_TRACKS.map((t) => <option key={t} value={t}>{PAYMENT_TRACK_LABELS[t]}</option>)}
             </select>
           </label>
           <label className="check"><input type="checkbox" name="standing_order" defaultChecked={s.standing_order} /> הוראת קבע</label>
+          <label className="check"><input type="checkbox" name="contract_signed" defaultChecked={s.contract_signed} /> חתמו על חוזה</label>
+          <label className="check"><input type="checkbox" name="card_on_file" defaultChecked={s.card_on_file} /> נלקחו פרטי אשראי</label>
+          <label>מייל<input name="email" type="email" dir="ltr" defaultValue={s.email ?? ''} /></label>
+          <label className="check"><input type="checkbox" name="no_email" defaultChecked={!!s.no_email} /> אין מייל</label>
           <label className="wide">העדפות שעה<input name="preferred_times" defaultValue={s.preferred_times} placeholder="למשל: שני מ-4:00 עד 6:00, אחרי 5:30" /></label>
           {isNew && (
             <>
@@ -142,8 +168,8 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
                   {lessons.map((l) => (
                     <li key={l.id}>
                       <div>
-                        <Link href={`/lessons/${l.id}`}><strong>{maps.instrument.get(l.instrument_id)?.name}</strong> · {DAYS[l.weekday]} {hhmm(l.start_time)}</Link>
-                        <div className="muted">{fullName(maps.teacher.get(l.teacher_id))} · {all.roomLabel(l.room_id)}</div>
+                        <Link href={`/lessons/${l.id}`}><strong>{maps.instrument.get(l.instrument_id)?.name}</strong> · {lessonWhen(l)}</Link>
+                        <div className="muted">{fullName(maps.teacher.get(l.teacher_id))} · {l.at_home ? 'בבית המורה' : all.roomLabel(l.room_id)}</div>
                       </div>
                       <StatusBadge status={l.status} />
                       <StatusActions id={l.id} status={l.status} back={here} setAction={setLessonStatus} deleteAction={deleteLesson} />
@@ -190,7 +216,69 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
             </section>
           </div>
 
-          <StudentPayments student={s} charges={billing!.charges} payments={billing!.payments} />
+          <StudentHistory
+            all={all} month={month}
+            history={{ ...history!, lessons: history!.lessons.filter((d) => month === 'all' || d.lesson_date.startsWith(month)) }}
+          />
+
+          <StudentAccount
+            student={s} charges={billing!.charges} payments={billing!.payments} settings={billing!.settings}
+            receipts={receipts!.receipts}
+            missing={billing!.missing} sumit={sumitConfigured()} hasEmail={contacts.some((c) => c.email)}
+            weekdays={[...new Set(all.timedLessons.filter((l) => l.student_id === s.id && l.status === 'confirmed' && !l.pair).map((l) => l.weekday))]}
+            pair={{
+              weekdays: [...new Set(all.timedLessons.filter((l) => l.student_id === s.id && l.status === 'confirmed' && l.pair).map((l) => l.weekday))],
+              // שיעורים בזוג שכבר חויבו (ימים סגורים): איפה התלמיד/ה בסבב של 4
+              done: history!.lessons.filter((d) => d.pair && BILLABLE.includes(d.attendance) && isClosed(d, history!.closures)).length,
+            }}
+            today={new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' })}
+          />
+
+          {certificates && !certificates.missing && certificates.certificates.length > 0 && (
+            <section className="card table-wrap" id="certificates">
+              <h2>אישורי קבלה שהופקו</h2>
+              <CertificateList certificates={certificates.certificates} back={here} emails={{ [s.id]: studentEmail(s) }} />
+            </section>
+          )}
+
+          {'family_id' in s && (() => {
+            const siblings = siblingsOf(s, all.students);
+            // מי שחולקים טלפון - בראש הרשימה להוספה
+            const phones = new Set(contacts.map((c) => normalizePhone(c.phone)).filter(Boolean));
+            const samePhone = new Set(all.contacts.filter((c) => c.student_id !== s.id && phones.has(normalizePhone(c.phone)))
+              .map((c) => c.student_id));
+            const candidates = all.students.filter((x) => x.id !== s.id && !siblings.some((y) => y.id === x.id))
+              .sort((a, b) => Number(samePhone.has(b.id)) - Number(samePhone.has(a.id)) ||
+                a.last_name.localeCompare(b.last_name, 'he') || a.first_name.localeCompare(b.first_name, 'he'));
+            return (
+              <section className="card">
+                <h2>אחים</h2>
+                <div className="siblings-row">
+                  {siblings.length === 0 && <span className="muted">לא סומנו אחים</span>}
+                  {siblings.map((x) => (
+                    <form key={x.id} action={unlinkFromForm}>
+                      <input type="hidden" name="student_id" value={x.id} />
+                      <Link href={`/students/${x.id}`}><strong>{fullName(x)}</strong></Link>
+                      <ConfirmButton className="btn btn-xs btn-ghost" message={`להוציא את ${fullName(x)} מהמשפחה?`}>✗</ConfirmButton>
+                    </form>
+                  ))}
+                </div>
+                <form action={linkFromForm} className="row-form" style={{ marginTop: 12 }}>
+                  <input type="hidden" name="student_id" value={s.id} />
+                  <select name="sibling_id" required aria-label="אח/ות" defaultValue="">
+                    <option value="" disabled>בחירת אח/ות…</option>
+                    {candidates.map((x) => (
+                      <option key={x.id} value={x.id}>{fullName(x)}{samePhone.has(x.id) ? ' (אותו טלפון)' : ''}</option>
+                    ))}
+                  </select>
+                  <button className="btn btn-xs btn-primary">+ הוספת אח/ות</button>
+                  {siblings.length > 0 && (
+                    <span className="muted">מוסיפים את כל המשפחה</span>
+                  )}
+                </form>
+              </section>
+            );
+          })()}
 
           <section className="card">
             <h2>אנשי קשר</h2>

@@ -1,12 +1,11 @@
 import type { NextRequest } from 'next/server';
 import { ageFrom } from '@/lib/age';
-import { DAYS, GENDER_LABELS, HEALTH_FUND_LABELS, STUDENT_STATUS_LABELS } from '@/lib/constants';
+import { GENDER_LABELS, HEALTH_FUND_LABELS, STUDENT_STATUS_LABELS } from '@/lib/constants';
 import { loadAll } from '@/lib/data';
 import { xlsxResponse, yesNo } from '@/lib/export';
 import { filterFundStudents, fundFilters, ID_STATE_LABELS, idState } from '@/lib/funds';
 import { createClient } from '@/lib/supabase/server';
-import { hhmm } from '@/lib/time';
-import { fullName, type Student } from '@/lib/types';
+import { fullName, lessonWhen, type Student } from '@/lib/types';
 
 /** הורדת תלמידים לשליחה לקופות (לפי הסינון בלוח הקופות) לאקסל */
 export async function GET(req: NextRequest) {
@@ -40,7 +39,7 @@ export async function GET(req: NextRequest) {
     { header: 'סניף', width: 14, value: (s) => (s.branch_id ? maps.branch.get(s.branch_id)?.name ?? '' : '') },
     { header: 'כלי / מקהלה', width: 18, value: instruments },
     { header: 'מורה', width: 16, value: (s) => [...new Set(lessons(s).map((l) => fullName(maps.teacher.get(l.teacher_id))))].join(', ') },
-    { header: 'מועד שיעור', width: 16, value: (s) => lessons(s).map((l) => `${DAYS[l.weekday]} ${hhmm(l.start_time)}`).join(', ') },
+    { header: 'מועד שיעור', width: 16, value: (s) => lessons(s).map(lessonWhen).join(', ') },
     { header: 'סטטוס', width: 12, value: (s) => STUDENT_STATUS_LABELS[s.status] },
   ], students);
 }

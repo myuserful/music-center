@@ -13,3 +13,15 @@ supabase/migrations/0012_needs_review.sql
 supabase/migrations/0013_review_only_handwritten.sql
 supabase/migrations/0014_dictated_updates.sql
 supabase/migrations/00*_dictated_students*.sql
+
+# גיבויים מקומיים עם פרטים אישיים
+backups/
+
+# קבצים מקומיים של המחשב הזה (אבחון רשת, NetFree, הפעלה מקומית, לוגים)
+*.log
+*-log*.txt
+diag*.bat
+diag*.mjs
+export-ca.ps1
+netfree-ca.*
+*maktzev*.bat

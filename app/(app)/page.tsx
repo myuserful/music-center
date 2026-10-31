@@ -115,7 +115,9 @@ export default async function Dashboard({ searchParams }: { searchParams: SP }) 
       .reduce((n, h) => n + toMin(h.end_time) - toMin(h.start_time), 0);
     const choirMinutes = all.choirs.filter((c) => c.teacher_id === t.id)
       .reduce((n, c) => n + toMin(c.end_time) - toMin(c.start_time), 0);
-    const busy = its.length * LESSON_MINUTES + choirMinutes;
+    // שיעור בזוג תופס משבצת אחת
+    const slots = its.filter((l) => !l.pair).length + new Set(its.filter((l) => l.pair).map((l) => `${l.weekday}:${l.start_time}`)).size;
+    const busy = slots * LESSON_MINUTES + choirMinutes;
     return {
       teacher: t,
       lessons: its.length,

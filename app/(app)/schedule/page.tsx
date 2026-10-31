@@ -18,7 +18,7 @@ export default async function SchedulePage({ searchParams }: { searchParams: SP 
   const branchId = Number(one(sp.branch)) || (teacher ? null : all.branches[0]?.id ?? null);
   const roomIds = new Set(all.rooms.filter((r) => !branchId || r.branch_id === branchId).map((r) => r.id));
 
-  const lessons = all.lessons.filter((l) => (teacher ? l.teacher_id === teacher.id : roomIds.has(l.room_id)));
+  const lessons = all.timedLessons.filter((l) => (teacher ? l.teacher_id === teacher.id : roomIds.has(l.room_id)));
   const choirs = all.choirs.filter((c) => (teacher ? c.teacher_id === teacher.id : roomIds.has(c.room_id)));
   const hours = teacher ? all.hours.filter((h) => h.teacher_id === teacher.id) : [];
 

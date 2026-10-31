@@ -87,24 +87,27 @@ export const ASSIGNEE_LABELS: Record<Assignee, string> = { yanky: 'יענקי', 
 export const TASK_KINDS = ['שיבוץ', 'טלפון להורים', 'מורים', 'תשלומים', 'קופות חולים', 'מנהלה', 'אחר'];
 
 // ---- תשלומים ----
-export type PaymentTrack = 'private' | 'maccabi' | 'commitment' | 'unknown';
-export const PAYMENT_TRACKS: PaymentTrack[] = ['private', 'maccabi', 'commitment', 'unknown'];
+export type PaymentTrack = 'private' | 'maccabi_full' | 'maccabi_split' | 'fund_deposit' | 'trial' | 'unknown';
+export const PAYMENT_TRACKS: PaymentTrack[] = ['private', 'maccabi_full', 'maccabi_split', 'fund_deposit', 'trial', 'unknown'];
 export const PAYMENT_TRACK_LABELS: Record<PaymentTrack, string> = {
   private: 'פרטי',
-  maccabi: 'מכבי (שני חלקים)',
-  commitment: 'התחייבות דרך הקופה',
+  maccabi_full: 'מכבי: מחיר מלא מראש',
+  maccabi_split: 'מכבי: חלק מראש + זיכוי מכבי',
+  fund_deposit: 'קופה אחרת: פיקדון עד התחייבות',
+  trial: 'שיעור ניסיון בלבד (לא ממשיך/ה)',
   unknown: 'לא ידוע / לבירור',
 };
 
-/** קופות שעובדות עם התחייבויות */
+/** קופות שעובדות עם התחייבויות (פיקדון עד שההורים מביאים התחייבות) */
 export type CommitmentFund = 'clalit' | 'leumit' | 'meuhedet';
 export const COMMITMENT_FUNDS: CommitmentFund[] = ['clalit', 'leumit', 'meuhedet'];
 
-export type PaymentMethod = 'cash' | 'credit' | 'check' | 'standing_order';
-export const PAYMENT_METHODS: PaymentMethod[] = ['cash', 'credit', 'check', 'standing_order'];
+export type PaymentMethod = 'cash' | 'credit' | 'transfer' | 'check' | 'standing_order';
+export const PAYMENT_METHODS: PaymentMethod[] = ['cash', 'credit', 'transfer', 'check', 'standing_order'];
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   cash: 'מזומן',
   credit: 'אשראי',
+  transfer: 'העברה בנקאית',
   check: "צ'ק",
   standing_order: 'הוראת קבע',
 };
@@ -116,16 +119,23 @@ export const CHECK_STATUS_LABELS: Record<CheckStatus, string> = {
   bounced: 'חזר',
 };
 
-export type ChargeState = 'due' | 'awaiting_refund' | 'to_submit' | 'submitted' | 'paid' | 'rejected' | 'cancelled';
-export const CHARGE_STATE_LABELS: Record<ChargeState, string> = {
-  due: 'לתשלום',
-  awaiting_refund: 'ממתין להחזר ממכבי',
-  to_submit: 'להגשה לקופה',
-  submitted: 'הוגש לקופה',
-  paid: 'שולם',
-  rejected: 'נדחה',
-  cancelled: 'בוטל',
+/** התחום שכתוב באישור הקבלה לקופה ("... טיפולים בהבעה ויצירה" / "... טיפולים באומנות") */
+export type ReceiptField = 'expression' | 'art';
+export const RECEIPT_FIELD_LABELS: Record<ReceiptField, string> = {
+  expression: 'הבעה ויצירה',
+  art: 'אומנות',
 };
+
+/** סוג שורת חיוב: מחיר השיעור (או החלק שמשלמים מראש), החלק של מכבי שמשלמים אחר כך, פיקדון, ידני */
+export type ChargeKind = 'lesson' | 'maccabi_later' | 'deposit' | 'manual';
+export const CHARGE_KIND_LABELS: Record<ChargeKind, string> = {
+  lesson: 'שיעור',
+  maccabi_later: 'זיכוי מכבי',
+  deposit: 'פיקדון',
+  manual: 'ידני',
+};
+/** נוכחות שמחייבת: הגיע/ה, או לא הגיע/ה בלי הודעה */
+export const BILLABLE: Attendance[] = ['present', 'absent'];
 
 // ---- כספים: הכנסות והוצאות ----
 export type TxKind = 'income' | 'expense';
@@ -151,4 +161,15 @@ export const EXPENSE_CATEGORIES = [
 export const INCOME_CATEGORIES = ['תרומה', 'מענק / תמיכה', 'הופעות ואירועים', 'השכרת חדרים', 'דמי רישום', 'מכירות', 'אחר'];
 /** קטגוריות של הכנסות שנספרות אוטומטית */
 export const PARENTS_INCOME = 'שכר לימוד - הורים';
+export const PARENTS_REFUND = 'החזר להורים';
 export const FUNDS_INCOME = 'קופות חולים';
+
+// ---- סגירת יום (נוכחות) ----
+export type Attendance = 'present' | 'absent' | 'excused' | 'cancelled';
+export const ATTENDANCES: Attendance[] = ['present', 'absent', 'excused', 'cancelled'];
+export const ATTENDANCE_LABELS: Record<Attendance, string> = {
+  present: 'הגיע/ה',
+  absent: 'לא הגיע/ה',
+  excused: 'ביטל/ה מראש',
+  cancelled: 'המורה ביטל/ה',
+};

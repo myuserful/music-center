@@ -1,102 +1,154 @@
 import Link from 'next/link';
 import { Empty, Flash, PageHead, one, type SP } from '@/components/ui';
-import {
-  addPayment, generateCharges, saveBillingSettings, setChargeState, setCheckStatus,
-} from '@/lib/actions/payments';
-import { monthLabel, parentBalance, shekel } from '@/lib/billing';
-import { CHARGE_STATE_LABELS, COMMITMENT_FUNDS, HEALTH_FUND_LABELS } from '@/lib/constants';
-import { loadAll, loadBilling } from '@/lib/data';
+import { ConfirmButton } from '@/components/ConfirmButton';
+import { DeletePaymentButton } from '@/components/DeletePaymentButton';
+import { addPayment, issueInternal, issueReceipt, rebillMonth, saveBillingSettings, setCheckStatus, testSumit } from '@/lib/actions/payments';
+import { account, effectiveAmount, maccabiPart, monthLabel, shekel } from '@/lib/billing';
+import { BILLABLE, DAYS, HEALTH_FUND_LABELS, PAYMENT_METHOD_LABELS, PAYMENT_TRACK_LABELS } from '@/lib/constants';
+import { addDays, dmy, weekdayOf } from '@/lib/day';
+import { loadAll, loadBilling, loadReceipts } from '@/lib/data';
 import { createClient } from '@/lib/supabase/server';
-import { fullName, type Charge } from '@/lib/types';
-
-const fmtDate = (d: string) => new Date(d).toLocaleDateString('he-IL');
+import { sumitConfigured } from '@/lib/sumit';
+import { fullName, type Charge, type DayClosure, type DayLesson, type Payment } from '@/lib/types';
 
 export default async function PaymentsPage({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
   const db = await createClient();
-  const [all, billing] = await Promise.all([loadAll(db), loadBilling(db)]);
-  const { maps } = all;
-
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
   const monthParam = one(sp.month);
-  const month = `${/^\d{4}-\d{2}$/.test(monthParam) ? monthParam : new Date().toISOString().slice(0, 7)}-01`;
-  const back = `/payments?month=${month.slice(0, 7)}`;
+  const month = /^\d{4}-\d{2}$/.test(monthParam) ? monthParam : today.slice(0, 7);
+  const [y, m] = month.split('-').map(Number);
+  const first = `${month}-01`;
+  const last = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+  const back = `/payments?month=${month}`;
+
+  const [all, billing, closuresRes, dayRes, receipts] = await Promise.all([
+    loadAll(db), loadBilling(db),
+    db.from('day_closures').select('*').gte('lesson_date', first).lte('lesson_date', last),
+    db.from('day_lessons').select('*').gte('lesson_date', first).lte('lesson_date', last),
+    loadReceipts(db),
+  ]);
+  const { maps } = all;
+  const closures = (closuresRes.data ?? []) as DayClosure[];
+  const dayLessons = (dayRes.data ?? []) as DayLesson[];
   const name = (id: number) => fullName(maps.student.get(id));
 
-  const byStudent = <T extends { student_id: number }>(rows: T[]) => {
-    const m = new Map<number, T[]>();
-    for (const r of rows) m.set(r.student_id, [...(m.get(r.student_id) ?? []), r]);
-    return m;
+  const group = <T extends { student_id: number }>(rows: T[]) => {
+    const g = new Map<number, T[]>();
+    for (const r of rows) g.set(r.student_id, [...(g.get(r.student_id) ?? []), r]);
+    return g;
   };
-  const chargesOf = byStudent(billing.charges);
-  const paymentsOf = byStudent(billing.payments);
-  const balance = (id: number) => parentBalance(chargesOf.get(id) ?? [], paymentsOf.get(id) ?? []);
+  const chargesOf = group<Charge>(billing.charges);
+  const paymentsOf = group<Payment>(billing.payments);
+  const ids = new Set([...chargesOf.keys(), ...paymentsOf.keys()]);
+  const accounts = [...ids].map((id) => ({
+    id, student: maps.student.get(id), a: account(chargesOf.get(id) ?? [], paymentsOf.get(id) ?? [], today),
+  })).filter((x) => x.student);
 
-  const thisMonth = billing.charges.filter((c) => c.month === month && c.state !== 'cancelled');
-  const billed = thisMonth.filter((c) => c.payer === 'parents' && c.state === 'due')
-    .reduce((n, c) => n + Number(c.amount), 0);
-  const collected = billing.payments.filter((p) => p.paid_on.startsWith(month.slice(0, 7)) && p.check_status !== 'bounced')
-    .reduce((n, p) => n + Number(p.amount), 0);
+  // החודש
+  const monthCharges = billing.charges.filter((c) => c.lesson_date >= first && c.lesson_date <= last);
+  const billedLessons = monthCharges.filter((c) => c.kind === 'lesson' || c.kind === 'deposit').length;
+  const billedAmount = monthCharges.reduce((n, c) => n + effectiveAmount(c), 0);
+  const collected = billing.payments
+    .filter((p) => p.paid_on >= first && p.paid_on <= last && p.check_status !== 'bounced')
+    .reduce((n, p) => n + (p.refund ? -1 : 1) * Number(p.amount), 0);
 
-  const debtors = all.students
-    .map((s) => ({ s, owe: balance(s.id) }))
-    .filter((x) => x.owe > 0)
-    .sort((a, b) => b.owe - a.owe);
-  const awaitingRefund = billing.charges.filter((c) => c.state === 'awaiting_refund');
-  const standingDue = debtors.filter((x) => x.s.standing_order);
+  const debtors = accounts.filter((x) => x.a.balance < 0).sort((a, b) => a.a.balance - b.a.balance);
+  const totalDebt = debtors.reduce((n, x) => n - x.a.balance, 0);
+  const overdue = accounts.flatMap((x) => x.a.overdue.map((l) => ({ ...x, line: l })))
+    .sort((a, b) => a.line.charge.due_date.localeCompare(b.line.charge.due_date));
+  const soon = addDays(today, 14);
+  const dueSoon = accounts.flatMap((x) => x.a.lines.filter((l) => l.status === 'upcoming' && l.charge.due_date <= soon)
+    .map((l) => ({ ...x, line: l })));
+  const deposits = accounts.filter((x) => x.a.deposits.length > 0);
+  const toReturn = accounts.filter((x) => x.a.balance > 0 && x.student!.payment_track === 'fund_deposit');
+  const standingDue = debtors.filter((x) => x.student!.standing_order);
   const pendingChecks = billing.payments.filter((p) => p.check_status === 'pending')
     .sort((a, b) => (a.check_date ?? '').localeCompare(b.check_date ?? ''));
 
-  // תלמידים פעילים עם שיבוץ סופי שאי אפשר לחייב
-  const hasActivity = (id: number) =>
-    all.lessons.some((l) => l.student_id === id && l.status === 'confirmed') ||
-    all.enrollments.some((e) => e.student_id === id && e.status === 'confirmed');
-  const unknownTrack = all.students.filter((s) => s.status === 'active' && s.payment_track === 'unknown' && hasActivity(s.id));
-  const unpricedChoirs = all.choirs.filter((c) => c.price_private == null || c.commitments == null);
+  // ימים שעוד לא נסגרו (עד היום): מורה עם שיעורים קבועים באותו יום בשבוע, בלי סגירה
+  const closed = new Set(closures.map((c) => `${c.teacher_id}:${c.lesson_date}`));
+  const openDays: { date: string; teachers: number[] }[] = [];
+  for (let d = first; d <= last && d <= today; d = addDays(d, 1)) {
+    const w = weekdayOf(d);
+    const teachers = [...new Set(all.timedLessons.filter((l) => l.weekday === w).map((l) => l.teacher_id))]
+      .filter((t) => !closed.has(`${t}:${d}`));
+    if (teachers.length) openDays.push({ date: d, teachers });
+  }
 
-  const fundCharges = thisMonth.filter((c) => c.payer === 'fund');
-  const rate = new Map(billing.rates.map((r) => [r.fund, r.amount]));
+  // שיעורים בימים סגורים שלא חויבו: תלמידים במסלול לא ידוע
+  const unbilled = [...new Set(dayLessons
+    .filter((r) => closed.has(`${r.teacher_id}:${r.lesson_date}`) && BILLABLE.includes(r.attendance))
+    .map((r) => r.student_id))]
+    .filter((id) => maps.student.get(id)?.payment_track === 'unknown');
+
+  const s = billing.settings;
+  const sumit = sumitConfigured();
+  // תשלומים בלי קבלה (באשראי הקבלה יוצאת ב-SUMIT עצמו)
+  const withReceipt = new Set(receipts.receipts.map((r) => r.payment_id));
+  const receiptsOf = (paymentId: number) => receipts.receipts.filter((r) => r.payment_id === paymentId);
+  const monthPayments = billing.payments.filter((p) => p.paid_on >= first && p.paid_on <= last)
+    .sort((a, b) => b.paid_on.localeCompare(a.paid_on) || b.id - a.id);
+  const noReceipt = billing.payments
+    .filter((p) => !p.refund && !withReceipt.has(p.id) && p.method !== 'credit' && p.check_status !== 'bounced')
+    .sort((a, b) => b.paid_on.localeCompare(a.paid_on));
 
   return (
     <>
-      <PageHead title="תשלומים" sub={monthLabel(month)}>
+      <PageHead title="תשלומים" sub={`${monthLabel(first)} · חיוב לפי שיעורים שהתקיימו (ימים סגורים)`}>
         <form className="inline" method="get">
-          <input type="month" name="month" defaultValue={month.slice(0, 7)} aria-label="חודש" />
+          <input type="month" name="month" defaultValue={month} aria-label="חודש" />
           <button className="btn btn-xs">הצגה</button>
         </form>
-        <form action={generateCharges}>
+        <form action={rebillMonth}>
           <input type="hidden" name="month" value={month} />
-          <button className="btn btn-primary">יצירת חיובים ל{monthLabel(month)}</button>
+          <button className="btn" title="בודק שוב את כל הימים הסגורים בחודש ומוסיף חיובים שחסרים">חיוב מחדש של {monthLabel(first)}</button>
         </form>
       </PageHead>
       <Flash sp={sp} />
+      {billing.missing && (
+        <div className="flash flash-error" role="alert">צריך להריץ את 0041_lesson_billing.sql ב-Supabase. עד אז אין חיובים.</div>
+      )}
 
       <div className="grid grid-4" style={{ marginBottom: 18 }}>
-        <div className="stat"><div className="stat-num">{shekel(billed)}</div><div className="stat-label">חויב מהורים החודש</div></div>
-        <div className="stat stat-free"><div className="stat-num">{shekel(collected)}</div><div className="stat-label">התקבל החודש</div></div>
-        <div className="stat stat-pending"><div className="stat-num">{awaitingRefund.length}</div><div className="stat-label">ממתינים להחזר ממכבי</div></div>
-        <div className="stat stat-undecided">
-          <div className="stat-num">{fundCharges.filter((c) => c.state === 'to_submit').reduce((n, c) => n + (c.commitments ?? 0), 0)}</div>
-          <div className="stat-label">התחייבויות להגשה החודש</div>
-        </div>
+        <div className="stat"><div className="stat-num">{billedLessons}</div><div className="stat-label">שיעורים שחויבו החודש ({shekel(billedAmount)})</div></div>
+        <div className="stat stat-free"><div className="stat-num">{shekel(collected)}</div><div className="stat-label">התקבל החודש (פחות החזרים)</div></div>
+        <div className="stat stat-pending"><div className="stat-num">{shekel(totalDebt)}</div><div className="stat-label">חובות הורים כרגע ({debtors.length})</div></div>
+        <div className="stat stat-undecided"><div className="stat-num">{overdue.length}</div><div className="stat-label">זיכוי מכבי באיחור</div></div>
       </div>
 
-      {(unknownTrack.length > 0 || unpricedChoirs.length > 0) && (
+      {(openDays.length > 0 || unbilled.length > 0) && (
         <section className="card">
-          <h2>חסר מידע לחיוב</h2>
-          {unknownTrack.length > 0 && (
-            <p>
-              <strong>מסלול תשלום לא ידוע ({unknownTrack.length}):</strong>{' '}
-              {unknownTrack.map((s) => (
-                <Link key={s.id} className="chip" href={`/students/${s.id}`}>
-                  {fullName(s)}{s.health_fund ? ` · ${HEALTH_FUND_LABELS[s.health_fund]}` : ''}
-                </Link>
-              ))}
-            </p>
+          <h2>לפני שגובים</h2>
+          {openDays.length > 0 && (
+            <>
+              <details>
+              <summary><strong>ימים שעוד לא נסגרו ({openDays.reduce((n, d) => n + d.teachers.length, 0)} ימי מורים):</strong> השיעורים בהם עוד לא חויבו</summary>
+              <ul className="list">
+                {openDays.map((d) => (
+                  <li key={d.date}>
+                    <Link href={`/daily?date=${d.date}`}>{DAYS[weekdayOf(d.date)]} {dmy(d.date)}</Link>
+                    <span>{d.teachers.map((t) => (
+                      <Link key={t} className="chip" href={`/daily?date=${d.date}#t${t}`}>{fullName(maps.teacher.get(t))}</Link>
+                    ))}</span>
+                  </li>
+                ))}
+              </ul>
+              </details>
+            </>
           )}
-          {unpricedChoirs.length > 0 && (
+          {unbilled.length > 0 && (
             <p>
-              <strong>מקהלות בלי מחירון מלא:</strong>{' '}
-              {unpricedChoirs.map((c) => <Link key={c.id} className="chip" href={`/choirs/${c.id}`}>{c.name}</Link>)}
+              <strong>שיעורים שלא חויבו, מסלול תשלום לא ידוע ({unbilled.length}):</strong>{' '}
+              {unbilled.map((id) => {
+                const st = maps.student.get(id)!;
+                return (
+                  <Link key={id} className="chip" href={`/students/${id}`}>
+                    {fullName(st)}{st.health_fund ? ` · ${HEALTH_FUND_LABELS[st.health_fund]}` : ''}
+                  </Link>
+                );
+              })}
+              <br /><span className="muted">אחרי שקובעים מסלול בכרטיס התלמיד/ה, לוחצים על &quot;חיוב מחדש&quot; למעלה.</span>
             </p>
           )}
         </section>
@@ -107,11 +159,14 @@ export default async function PaymentsPage({ searchParams }: { searchParams: SP 
           <h2>חובות הורים ({debtors.length})</h2>
           {debtors.length === 0 ? <Empty>אין חובות</Empty> : (
             <ul className="list">
-              {debtors.map(({ s, owe }) => (
-                <li key={s.id}>
-                  <Link href={`/students/${s.id}`}>{fullName(s)}</Link>
-                  <span>{s.standing_order && <span className="chip chip-plain">הוראת קבע</span>}</span>
-                  <strong>{shekel(owe)}</strong>
+              {debtors.map(({ id, student, a }) => (
+                <li key={id}>
+                  <div>
+                    <Link href={`/students/${id}#account`}>{fullName(student)}</Link>
+                    <div className="muted">{PAYMENT_TRACK_LABELS[student!.payment_track]}</div>
+                  </div>
+                  <span>{student!.standing_order && <span className="chip chip-plain">הוראת קבע</span>}</span>
+                  <strong>{shekel(-a.balance)}</strong>
                 </li>
               ))}
             </ul>
@@ -119,24 +174,56 @@ export default async function PaymentsPage({ searchParams }: { searchParams: SP 
         </section>
 
         <section className="card">
-          <h2>מכבי: חלק 2 ממתין להחזר</h2>
-          {awaitingRefund.length === 0 ? <Empty>אין</Empty> : (
+          <h2>זיכוי מכבי: באיחור ובקרוב</h2>
+          <p className="muted">95 ₪ לשיעור שצריך להשלים עד {s.maccabi_later_months} חודשים מיום השיעור</p>
+          {overdue.length + dueSoon.length === 0 ? <Empty>אין</Empty> : (
             <ul className="list">
-              {awaitingRefund.map((c) => (
-                <li key={c.id}>
+              {[...overdue, ...dueSoon].map(({ id, student, line }) => (
+                <li key={line.charge.id}>
                   <div>
-                    <Link href={`/students/${c.student_id}`}>{name(c.student_id)}</Link>
-                    <div className="muted">{c.description} · {monthLabel(c.month)} · {shekel(Number(c.amount))}</div>
+                    <Link href={`/students/${id}#account`}>{fullName(student)}</Link>
+                    <div className="muted">שיעור {dmy(line.charge.lesson_date)} · עד {dmy(line.charge.due_date)}</div>
                   </div>
-                  <form action={setChargeState}>
-                    <input type="hidden" name="id" value={c.id} />
-                    <input type="hidden" name="state" value="due" />
-                    <input type="hidden" name="back" value={back} />
-                    <button className="btn btn-xs">קיבלו החזר</button>
-                  </form>
+                  <span className={`badge ${line.status === 'overdue' ? 'badge-review' : 'badge-muted'}`}>
+                    {line.status === 'overdue' ? 'באיחור' : 'בקרוב'}
+                  </span>
+                  <strong>{shekel(effectiveAmount(line.charge) - line.covered)}</strong>
                 </li>
               ))}
             </ul>
+          )}
+        </section>
+
+        <section className="card">
+          <h2>פיקדונות שמחכים להתחייבות ({deposits.reduce((n, x) => n + x.a.deposits.length, 0)})</h2>
+          <p className="muted">כללית, מאוחדת ולאומית. כשההורים מביאים התחייבות מסמנים בכרטיס התלמיד/ה, והפיקדון חוזר אליהם</p>
+          {deposits.length === 0 ? <Empty>אין</Empty> : (
+            <ul className="list">
+              {deposits.map(({ id, student, a }) => (
+                <li key={id}>
+                  <div>
+                    <Link href={`/students/${id}#account`}>{fullName(student)}</Link>
+                    <div className="muted">
+                      {student!.health_fund ? HEALTH_FUND_LABELS[student!.health_fund] : ''} · {a.deposits.length} שיעורים · מ-{dmy(a.deposits[0].lesson_date)}
+                    </div>
+                  </div>
+                  <strong>{shekel(a.deposits.reduce((n, c) => n + Number(c.amount), 0))}</strong>
+                </li>
+              ))}
+            </ul>
+          )}
+          {toReturn.length > 0 && (
+            <>
+              <h3>פיקדונות להחזיר להורים</h3>
+              <ul className="list">
+                {toReturn.map(({ id, student, a }) => (
+                  <li key={id}>
+                    <Link href={`/students/${id}#account`}>{fullName(student)}</Link>
+                    <strong>{shekel(a.balance)}</strong>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </section>
 
@@ -145,33 +232,29 @@ export default async function PaymentsPage({ searchParams }: { searchParams: SP 
           <p className="muted">אחרי שבודקים בדף הבנק שהכסף נכנס</p>
           {standingDue.length === 0 ? <Empty>אין הוראות קבע פתוחות</Empty> : (
             <ul className="list">
-              {standingDue.map(({ s, owe }) => (
-                <li key={s.id}>
-                  <Link href={`/students/${s.id}`}>{fullName(s)}</Link>
+              {standingDue.map(({ id, student, a }) => (
+                <li key={id}>
+                  <Link href={`/students/${id}#account`}>{fullName(student)}</Link>
                   <form action={addPayment}>
-                    <input type="hidden" name="student_id" value={s.id} />
-                    <input type="hidden" name="amount" value={owe} />
+                    <input type="hidden" name="student_id" value={id} />
+                    <input type="hidden" name="amount" value={-a.balance} />
                     <input type="hidden" name="method" value="standing_order" />
                     <input type="hidden" name="back" value={back} />
-                    <button className="btn btn-xs btn-confirmed">נכנסו {shekel(owe)}</button>
+                    <button className="btn btn-xs btn-confirmed">נכנסו {shekel(-a.balance)}</button>
                   </form>
                 </li>
               ))}
             </ul>
           )}
-        </section>
 
-        <section className="card">
-          <h2>צ&apos;קים ממתינים להפקדה</h2>
+          <h2 style={{ marginTop: 18 }}>צ&apos;קים ממתינים להפקדה</h2>
           {pendingChecks.length === 0 ? <Empty>אין צ&apos;קים ממתינים</Empty> : (
             <ul className="list">
               {pendingChecks.map((p) => (
                 <li key={p.id}>
                   <div>
-                    <Link href={`/students/${p.student_id}`}>{name(p.student_id)}</Link> · {shekel(Number(p.amount))}
-                    <div className="muted">
-                      צ&apos;ק {p.check_number} {p.check_bank}{p.check_date && ` · לפירעון ${fmtDate(p.check_date)}`}
-                    </div>
+                    <Link href={`/students/${p.student_id}#account`}>{name(p.student_id)}</Link> · {shekel(Number(p.amount))}
+                    <div className="muted">צ&apos;ק {p.check_number} {p.check_bank}{p.check_date && ` · לפירעון ${dmy(p.check_date)}`}</div>
                   </div>
                   <div className="status-actions">
                     {(['deposited', 'bounced'] as const).map((st) => (
@@ -192,67 +275,93 @@ export default async function PaymentsPage({ searchParams }: { searchParams: SP 
         </section>
       </div>
 
-      <section className="card">
-        <h2>התחייבויות לקופות: {monthLabel(month)}</h2>
-        {fundCharges.length === 0 ? <Empty>אין התחייבויות לחודש הזה. יוצרים אותן בכפתור &quot;יצירת חיובים&quot;.</Empty> : (
-          COMMITMENT_FUNDS.map((fund) => {
-            const rows = fundCharges.filter((c) => c.fund === fund);
-            if (!rows.length) return null;
-            const total = rows.reduce((n, c) => n + (c.commitments ?? 0), 0);
-            const toSubmit = rows.filter((c) => c.state === 'to_submit');
-            return (
-              <div key={fund} style={{ marginBottom: 16 }}>
-                <h3>
-                  {HEALTH_FUND_LABELS[fund]}: {total} התחייבויות
-                  {rate.get(fund) != null && ` · ${shekel(total * Number(rate.get(fund)))}`}
-                </h3>
-                <div className="table-wrap">
-                  <table>
-                    <thead><tr><th>תלמיד/ה</th><th>ת&quot;ז</th><th>פעילות</th><th>התחייבויות</th><th>סטטוס</th><th /></tr></thead>
-                    <tbody>
-                      {rows.map((c) => (
-                        <tr key={c.id}>
-                          <td><Link href={`/students/${c.student_id}`}>{name(c.student_id)}</Link></td>
-                          <td dir="ltr">{maps.student.get(c.student_id)?.id_number}</td>
-                          <td>{c.description}</td>
-                          <td>{c.commitments}</td>
-                          <td>{CHARGE_STATE_LABELS[c.state]}</td>
-                          <td><FundStateButtons c={c} back={back} /></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                {toSubmit.length > 0 && (
-                  <form action={setChargeState} style={{ marginTop: 8 }}>
-                    {toSubmit.map((c) => <input key={c.id} type="hidden" name="id" value={c.id} />)}
-                    <input type="hidden" name="state" value="submitted" />
-                    <input type="hidden" name="back" value={back} />
-                    <button className="btn btn-xs">סימון הכול כהוגש ל{HEALTH_FUND_LABELS[fund]} ({toSubmit.length})</button>
-                  </form>
-                )}
-              </div>
-            );
-          })
+      <section className="card table-wrap">
+        <h2>תשלומים שהתקבלו ב{monthLabel(first)} ({monthPayments.length})</h2>
+        {monthPayments.length === 0 ? <Empty>לא נרשמו תשלומים בחודש הזה</Empty> : (
+          <table className="day-table">
+            <thead><tr><th>תאריך</th><th>תלמיד/ה</th><th>סכום</th><th>אמצעי</th><th>קבלה</th><th /></tr></thead>
+            <tbody>
+              {monthPayments.map((p) => {
+                const rs = receiptsOf(p.id);
+                return (
+                  <tr key={p.id}>
+                    <td className="nowrap">{dmy(p.paid_on)}</td>
+                    <td><Link href={`/students/${p.student_id}#account`}>{name(p.student_id)}</Link></td>
+                    <td className="nowrap">
+                      <strong>{p.refund ? `החזר ${shekel(Number(p.amount))}` : shekel(Number(p.amount))}</strong>
+                      {maccabiPart(p) > 0 && <div className="muted">מתוכם {shekel(maccabiPart(p))} לזיכוי מכבי</div>}
+                      {p.check_status === 'bounced' && <div><span className="badge badge-review">צ&apos;ק חזר</span></div>}
+                    </td>
+                    <td>{PAYMENT_METHOD_LABELS[p.method]}{p.reference && <div className="muted">{p.reference}</div>}</td>
+                    <td>{rs.map((r) => (r.source === 'internal' ? `אישור ${r.number}` : `קבלה ${r.number}`)).join(', ') || <span className="muted">—</span>}</td>
+                    <td><DeletePaymentButton payment={p} receipts={rs} back={back} /></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         )}
       </section>
 
       <section className="card">
-        <h2>מחירון</h2>
+        <div className="day-head">
+          <h2>קבלות (SUMIT)</h2>
+          {sumit ? (
+            <form action={testSumit}><button className="btn btn-xs">בדיקת חיבור</button></form>
+          ) : <span className="badge badge-muted">לא מחובר</span>}
+        </div>
+        {!sumit && (
+          <p className="muted">
+            כדי להפיק קבלות צריך להכניס את מספר החברה ואת המפתח הפרטי של SUMIT לקובץ .env.local (SUMIT_COMPANY_ID, SUMIT_API_KEY)
+            ולהפעיל מחדש את המערכת. ב-Vercel מוסיפים אותם ב-Environment Variables.
+          </p>
+        )}
+        <p className="muted">תשלומים באשראי מקבלים קבלה ישירות ב-SUMIT. כאן: מזומן, העברה, צ&apos;ק והוראת קבע שעוד אין להם קבלה. על פיקדון מפיקים אישור פנימי מהמערכת (לא ב-SUMIT, כי פיקדון חוזר להורים).</p>
+        {noReceipt.length === 0 ? <Empty>לכל התשלומים יש קבלה</Empty> : (
+          <ul className="list">
+            {noReceipt.slice(0, 50).map((p) => (
+              <li key={p.id}>
+                <div>
+                  <Link href={`/students/${p.student_id}#account`}>{name(p.student_id)}</Link> · {shekel(Number(p.amount))}
+                  <div className="muted">{dmy(p.paid_on)} · {PAYMENT_METHOD_LABELS[p.method]}</div>
+                </div>
+                <div className="status-actions">
+                <form action={issueInternal}>
+                  <input type="hidden" name="id" value={p.id} />
+                  <input type="hidden" name="back" value={back} />
+                  <button className="btn btn-xs">
+                    {maps.student.get(p.student_id)?.payment_track === 'fund_deposit' ? 'אישור פיקדון' : 'אישור פנימי'}
+                  </button>
+                </form>
+                {sumit && maps.student.get(p.student_id)?.payment_track !== 'fund_deposit' && (
+                  <form action={issueReceipt}>
+                    <input type="hidden" name="id" value={p.id} />
+                    <input type="hidden" name="back" value={back} />
+                    <ConfirmButton className="btn btn-xs btn-primary" message={`להפיק ב-SUMIT קבלה על ${shekel(Number(p.amount))} ל${name(p.student_id)}?`}>
+                      קבלה ב-SUMIT
+                    </ConfirmButton>
+                  </form>
+                )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="card">
+        <h2>מחירון לשיעור</h2>
         <form action={saveBillingSettings}>
           <div className="form-grid">
-            <label>שיעור פרטי: מחיר פרטי לחודש<input name="lesson_private" type="number" min="0" defaultValue={billing.settings.lesson_private} required /></label>
-            <label>שיעור פרטי: מכבי חלק 1<input name="lesson_maccabi_1" type="number" min="0" defaultValue={billing.settings.lesson_maccabi_1} required /></label>
-            <label>שיעור פרטי: מכבי חלק 2<input name="lesson_maccabi_2" type="number" min="0" defaultValue={billing.settings.lesson_maccabi_2} required /></label>
-            <label>שיעור פרטי: התחייבויות בחודש<input name="lesson_commitments" type="number" min="0" defaultValue={billing.settings.lesson_commitments} required /></label>
-            {COMMITMENT_FUNDS.map((f) => (
-              <label key={f}>
-                {HEALTH_FUND_LABELS[f]}: ₪ להתחייבות
-                <input name={`rate_${f}`} type="number" min="0" step="any" defaultValue={rate.get(f) ?? ''} placeholder="לא ידוע" />
-              </label>
-            ))}
+            <label>פרטי<input name="price_private" type="number" min="0" step="any" defaultValue={s.price_private} required /></label>
+            <label>מכבי: מחיר מלא מראש<input name="price_maccabi_full" type="number" min="0" step="any" defaultValue={s.price_maccabi_full} required /></label>
+            <label>מכבי: חלק מראש<input name="price_maccabi_upfront" type="number" min="0" step="any" defaultValue={s.price_maccabi_upfront} required /></label>
+            <label>מכבי: זיכוי מכבי (אחר כך)<input name="price_maccabi_later" type="number" min="0" step="any" defaultValue={s.price_maccabi_later} required /></label>
+            <label>מכבי: חודשים להשלמת הזיכוי<input name="maccabi_later_months" type="number" min="1" max="12" defaultValue={s.maccabi_later_months} required /></label>
+            <label>כללית / מאוחדת / לאומית: פיקדון<input name="price_fund_deposit" type="number" min="0" step="any" defaultValue={s.price_fund_deposit} required /></label>
+            <label>שיעור ניסיון (לא ממשיכים)<input name="price_trial" type="number" min="0" step="any" defaultValue={s.price_trial ?? 55} required /></label>
           </div>
-          <p className="muted">מחירי המקהלות נקבעים בדף של כל מקהלה.</p>
+          <p className="muted">שינוי מחיר חל על שיעורים שייסגרו מעכשיו. שיעורים שכבר חויבו נשארים במחיר שלהם.</p>
           <div className="form-foot"><button className="btn btn-primary">שמירת מחירון</button></div>
         </form>
       </section>
@@ -260,24 +369,3 @@ export default async function PaymentsPage({ searchParams }: { searchParams: SP 
   );
 }
 
-function FundStateButtons({ c, back }: { c: Charge; back: string }) {
-  const next: Partial<Record<Charge['state'], Charge['state'][]>> = {
-    to_submit: ['submitted'],
-    submitted: ['paid', 'rejected'],
-    rejected: ['to_submit'],
-  };
-  return (
-    <div className="status-actions">
-      {(next[c.state] ?? []).map((st) => (
-        <form key={st} action={setChargeState}>
-          <input type="hidden" name="id" value={c.id} />
-          <input type="hidden" name="state" value={st} />
-          <input type="hidden" name="back" value={back} />
-          <button className={`btn btn-xs ${st === 'rejected' ? 'btn-danger' : st === 'paid' ? 'btn-confirmed' : ''}`}>
-            {st === 'to_submit' ? 'להגיש שוב' : CHARGE_STATE_LABELS[st]}
-          </button>
-        </form>
-      ))}
-    </div>
-  );
-}

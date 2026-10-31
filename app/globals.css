@@ -341,15 +341,19 @@ tr.inactive td { opacity: 0.5; }
   margin-bottom: 20px;
   flex-wrap: wrap;
 }
-.tabs a {
+.tabs a, .tabs button {
   padding: 7px 18px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
   color: var(--muted);
   font-weight: 500;
   border-radius: 999px;
   transition: background 0.2s var(--ease), color 0.2s var(--ease), box-shadow 0.2s var(--ease);
 }
-.tabs a:hover { color: var(--ink); }
-.tabs a.active { background: #fff; color: var(--brand); box-shadow: 0 2px 8px rgb(30 34 48 / 0.08); }
+.tabs a:hover, .tabs button:hover { color: var(--ink); }
+.tabs a.active, .tabs button.active { background: #fff; color: var(--brand); box-shadow: 0 2px 8px rgb(30 34 48 / 0.08); }
 
 .capacity { height: 8px; background: var(--brand-soft); border-radius: 99px; overflow: hidden; margin-top: 8px; }
 .capacity span { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--mint), var(--blue)); }
@@ -633,6 +637,36 @@ tr.inactive td { opacity: 0.5; }
 .call-dot.dot-confirmed { background: var(--confirmed); }
 .call-phone { margin: 6px 0 0; font-size: 0.84rem; }
 .call-card .task-due { display: block; margin-top: 4px; }
+.kanban-details { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.kanban-call-waiting { border-top-color: var(--pending); }
+.missing-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; font-size: 0.84rem; }
+.missing-list li { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 3px 6px; border-radius: 6px; background: var(--pending-bg); }
+.missing-list select, .missing-id input { width: auto; max-width: 130px; padding: 2px 6px; font-size: 0.8rem; }
+.missing-id { display: flex; gap: 4px; margin: 0; }
+.call-also { margin: 6px 0 0; font-size: 0.8rem; color: var(--coral); font-weight: 600; }
+.call-note { margin-top: 6px; width: 100%; padding: 4px 8px; font-size: 0.82rem; }
+.sibling-section { margin-top: 18px; }
+.sibling-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sibling-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; margin-top: 10px; }
+.sibling-group { padding: 12px 14px; }
+.sibling-students { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.sibling-students li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sibling-students .check { margin: 0; }
+.sibling-contacts { flex-basis: 100%; font-size: 0.8rem; padding-inline-start: 24px; }
+.sibling-actions { display: flex; gap: 6px; margin-top: 10px; }
+.siblings-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.siblings-row form { display: inline-flex; gap: 6px; align-items: center; margin: 0; }
+.missing-list li.missing-family { background: var(--confirmed-bg); }
+.family-info-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.family-info-head h2 { margin: 0; }
+.family-info-member { padding: 10px 0; border-top: 1px solid #ecebf3; }
+.family-info-member h3 { margin: 0 0 4px; font-size: 1rem; }
+.family-info-member p { margin: 0 0 4px; }
+.family-info-member ul { margin: 0; padding-inline-start: 18px; font-size: 0.9rem; }
+.family-member { margin-top: 8px; }
+.family-member-name { font-weight: 700; font-size: 0.86rem; }
+.tab-count { font-size: 0.75rem; opacity: 0.7; margin-inline-start: 4px; }
+@media (max-width: 1200px) { .kanban-details { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 1200px) { .kanban-calls { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 @media (max-width: 860px) {
@@ -752,6 +786,52 @@ tr.inactive td { opacity: 0.5; }
 .print-table th { background: #f5f7fb; }
 .nowrap { white-space: nowrap; }
 
+/* ---- סגירת יום ---- */
+.day-cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.day-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.day-head h2 { margin: 0 0 2px; }
+.day-head .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.day-closed { border-inline-start: 4px solid var(--mint); }
+.day-table { width: 100%; border-collapse: collapse; }
+.day-table th, .day-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: start; vertical-align: middle; }
+.day-table select, .day-table input { min-width: 0; }
+.day-table td .chip, .day-table td .badge { margin-inline-start: 0; margin-top: 2px; font-size: 0.75rem; }
+.day-table tr.att-absent td, .day-table tr.att-excused td, .day-table tr.att-cancelled td { background: #fafbfd; }
+.day-table tr.att-cancelled strong, .day-table tr.att-excused strong { text-decoration: line-through; color: var(--muted); }
+.att-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.att-seg button { border: 0; background: #fff; padding: 4px 10px; font: inherit; font-size: 0.8rem; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.att-seg button + button { border-inline-start: 1px solid var(--line); }
+.att-seg button.on { font-weight: 600; }
+.att-btn-present { background: var(--confirmed-bg) !important; color: var(--confirmed) !important; }
+.att-btn-absent { background: var(--danger-bg) !important; color: var(--danger) !important; }
+.att-btn-excused { background: var(--pending-bg) !important; color: var(--pending) !important; }
+.att-btn-cancelled { background: var(--undecided-bg) !important; color: var(--undecided) !important; }
+.day-add { margin-top: 12px; position: relative; max-width: 420px; }
+.day-add input { width: 100%; }
+.day-matches { list-style: none; margin: 4px 0 0; padding: 4px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #fff; box-shadow: var(--shadow); }
+.day-matches button { width: 100%; text-align: start; border: 0; background: transparent; padding: 6px 8px; border-radius: 8px; font: inherit; cursor: pointer; }
+.day-matches button:hover { background: var(--brand-soft); }
+.chip-sub { background: var(--pending-bg); color: var(--pending); border-color: transparent; }
+.day-sub { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 0.9rem; }
+.day-table select.sub-on { background: var(--pending-bg); color: var(--pending); font-weight: 600; }
+.history-list { list-style: none; margin: 6px 0 0; padding: 0; font-size: 0.85rem; }
+.history-list li { padding: 2px 0; }
+.day-student { color: inherit; }
+.day-student:hover strong { color: var(--brand); text-decoration: underline; }
+.link-chip { display: inline-block; margin: 3px 0 0 4px; padding: 1px 8px; border-radius: 999px; font-size: 0.75rem; background: var(--brand-soft); color: var(--brand-dark); white-space: nowrap; }
+a.link-chip:hover { text-decoration: underline; }
+.link-chip-free { background: var(--confirmed-bg); color: var(--confirmed); }
+.coverage { margin-top: 2px; }
+.pay-check { display: flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
+.pay-check.manual { color: var(--pending); font-weight: 600; }
+.pay-mark { font-size: 0.75rem; color: var(--muted); }
+.pay-mark.on { color: var(--confirmed); }
+.trial-box { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 12px; }
+.trial-box summary { cursor: pointer; color: var(--muted); font-weight: 600; }
+.account-cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; margin-top: 16px; }
+#account tr:target td, #account li:target { background: var(--yellow-soft); transition: background 0.4s; }
+.day-head .btn[aria-disabled] { opacity: 0.5; cursor: not-allowed; }
+
 @media print {
   @page { size: A4; margin: 12mm; }
   body { background: #fff; }
@@ -776,3 +856,29 @@ tr.inactive td { opacity: 0.5; }
 .receipt-days legend { padding: 0; margin-bottom: 6px; }
 .receipt-dates { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 16px; }
 .receipt-form .flash { margin: 14px 0 0; }
+.receipt-field { display: flex; flex-direction: column; gap: 4px; max-width: 260px; margin-bottom: 12px; }
+
+/* לימוד בבית המורה: משבצות ממוספרות מתחת ללוח של המורה */
+.home-strip { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 10px; margin-top: 10px; padding-top: 8px; border-top: 1px dashed #cfcbe3; }
+.home-strip-title { font-size: 0.8rem; font-weight: 600; color: var(--muted); padding-top: 6px; white-space: nowrap; }
+.home-slots { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+.home-slot { min-width: 96px; max-width: 160px; min-height: 38px; }
+.home-slot .slot { height: 100%; font-size: 0.78rem; }
+.home-slot.drop {
+  display: grid; place-items: center; border-radius: 8px;
+  color: #9fd2b4; font-size: 0.72rem; border: 1px dashed #c9e6d5; cursor: copy;
+}
+.home-slot.drop.ready { background: #f3fbf6; color: var(--confirmed); }
+.home-slot.drop.over { background: var(--confirmed-bg); outline: 2px solid var(--confirmed); outline-offset: -2px; }
+.home-slot.drop.busy { background: var(--pending-bg); color: var(--pending); }
+
+/* הסרת תאריך מקבלה ידנית */
+.chip-x {
+  border: 0; background: none; padding: 0 2px; margin-inline-start: 4px; cursor: pointer;
+  color: var(--muted); font-size: 0.8em; line-height: 1;
+}
+.chip-x:hover { color: var(--danger, #c0392b); }
+
+/* שיעור בזוג: שני כרטיסים באותה משבצת - קטנים, רק השם (השעה והכלי זהים) */
+.mini-board td.pair-cell .slot { height: auto; padding: 1px 6px; margin-bottom: 1px; }
+.mini-board td.pair-cell .slot small { display: none; }

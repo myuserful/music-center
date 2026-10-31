@@ -7,7 +7,7 @@ import { DAYS, STATUS_LABELS, STATUSES, type Status } from '@/lib/constants';
 import { loadAll } from '@/lib/data';
 import { createClient } from '@/lib/supabase/server';
 import { hhmm } from '@/lib/time';
-import { fullName } from '@/lib/types';
+import { fullName, lessonWhen } from '@/lib/types';
 
 type Tab = Status | 'none';
 
@@ -82,7 +82,7 @@ export default async function TrackingPage({ searchParams }: { searchParams: SP 
                       <td><Link href={`/students/${l.student_id}`}>{fullName(maps.student.get(l.student_id))}</Link></td>
                       <td>{maps.instrument.get(l.instrument_id)?.name}</td>
                       <td>{fullName(maps.teacher.get(l.teacher_id))}</td>
-                      <td><Link href={`/lessons/${l.id}`}>{DAYS[l.weekday]} {hhmm(l.start_time)}</Link><br /><span className="muted">{all.roomLabel(l.room_id)}</span></td>
+                      <td><Link href={`/lessons/${l.id}`}>{lessonWhen(l)}</Link><br /><span className="muted">{l.at_home ? 'בבית המורה' : all.roomLabel(l.room_id)}</span></td>
                       <td>{phone(l.student_id)}</td>
                       <td><StatusBadge status={l.status} /></td>
                       <td><StatusActions id={l.id} status={l.status} back={back} setAction={setLessonStatus} deleteAction={deleteLesson} /></td>

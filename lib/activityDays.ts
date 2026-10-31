@@ -25,6 +25,9 @@ const toIso = (t: number) => new Date(t).toISOString().slice(0, 10);
 
 const isOff = (iso: string) => ACTIVITY_YEAR.off.some((o) => iso >= o.from && iso <= o.to);
 
+/** יום שיש בו פעילות לפי הלוח: בתוך השנה ולא בחג/חופשה (בלי קשר ליום בשבוע) */
+export const isActivityDate = (iso: string) => iso >= ACTIVITY_YEAR.start && iso <= ACTIVITY_YEAR.end && !isOff(iso);
+
 /** כל ימי הפעילות בשנה שנופלים על הימים שנבחרו (0 = ראשון), לפי הסדר */
 export function activityDays(weekdays: number[]): string[] {
   const out: string[] = [];
@@ -46,4 +49,22 @@ export function activityDates(weekdays: number[], from: string, count: number): 
 export function shortDate(iso: string): string {
   const [y, m, d] = iso.split('-');
   return `${Number(d)}.${Number(m)}.${y.slice(2)}`;
+}
+
+/** חג/חופשה לפי הלוח (להצגה ליד תאריך שנבחר ביד) */
+export const offName = (iso: string) => ACTIVITY_YEAR.off.find((o) => iso >= o.from && iso <= o.to)?.name ?? '';
+
+/**
+ * לקבלה ידנית: count התאריכים הראשונים החל מ-from שנופלים על הימים שנבחרו, בכל יום בשבוע ובלי גבולות השנה
+ * (גם תאריכים שעברו). skipOff = לדלג על חגים וחופשות שבלוח
+ */
+export function weekdayDates(weekdays: number[], from: string, count: number, skipOff = true): string[] {
+  const out: string[] = [];
+  if (!weekdays.length || count <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(from)) return out;
+  // עד שלוש שנים קדימה, כדי לא להיתקע בלולאה
+  for (let t = toTime(from), end = t + 3 * 366 * DAY_MS; t <= end && out.length < count; t += DAY_MS) {
+    const iso = toIso(t);
+    if (weekdays.includes(new Date(t).getUTCDay()) && !(skipOff && isOff(iso))) out.push(iso);
+  }
+  return out;
 }

@@ -1,24 +1,31 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ConfirmButton } from '@/components/ConfirmButton';
-import { BackLink, Empty, Flash, PageHead, RoomOptions, StatusBadge, type SP } from '@/components/ui';
+import { TeacherHistory } from '@/components/LessonHistory';
+import { BackLink, Empty, Flash, one, PageHead, RoomOptions, StatusBadge, type SP } from '@/components/ui';
+import { isoDate } from '@/lib/age';
 import { addTeacherHours, deleteTeacher, deleteTeacherHours, saveTeacher, updateTeacherHours } from '@/lib/actions/people';
 import {
   BOARD_DAYS, DAYS, INTEREST_LABELS, LANGUAGES, TEACHER_GENDER_LABELS, type Interest, type TeacherGender,
 } from '@/lib/constants';
-import { loadAll } from '@/lib/data';
+import { loadAll, loadHistory } from '@/lib/data';
 import { createClient } from '@/lib/supabase/server';
 import { hhmm, QUARTER_TIME_OPTIONS } from '@/lib/time';
-import { fullName, type Teacher } from '@/lib/types';
+import { fullName, lessonWhen, type Teacher } from '@/lib/types';
 
 export default async function TeacherPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
   const [{ id }, sp] = await Promise.all([params, searchParams]);
   const db = await createClient();
-  const all = await loadAll(db);
   const isNew = id === 'new';
+  const month = one(sp.month) || isoDate(new Date()).slice(0, 7);
+  const known = !isNew && !Number.isNaN(Number(id));
+  const [all, history] = await Promise.all([
+    loadAll(db),
+    known ? loadHistory(db, { teacher: Number(id) }, month) : null,
+  ]);
   const t: Teacher | undefined = isNew
     ? {
-      id: 0, first_name: '', last_name: '', phone: '', email: '', room_id: null, notes: '', active: true,
+      id: 0, first_name: '', last_name: '', phone: '', email: '', room_id: null, notes: '', active: true, min_weekly_hours: null,
       gender: null, teaches_young_boys: false, hourly_rate: null, interest: null, days_per_week: null, languages: [],
     }
     : all.maps.teacher.get(Number(id));
@@ -64,6 +71,10 @@ export default async function TeacherPage({ params, searchParams }: { params: Pr
           <label>טלפון<input name="phone" defaultValue={t.phone} dir="ltr" /></label>
           <label>אימייל<input name="email" type="email" defaultValue={t.email} dir="ltr" /></label>
           <label>מחיר לשעה (₪)<input name="hourly_rate" type="number" min={0} step="any" defaultValue={t.hourly_rate ?? ''} dir="ltr" /></label>
+          <label title="אם המורה עבד/ה פחות בשבוע, משלמים לו/ה השלמה עד המינימום">
+            מינימום שעות בשבוע
+            <input name="min_weekly_hours" type="number" min={0} step="0.5" defaultValue={t.min_weekly_hours ?? ''} dir="ltr" placeholder="אין" />
+          </label>
           <label>
             ימים בשבוע
             <select name="days_per_week" defaultValue={t.days_per_week ?? ''}>
@@ -186,10 +197,10 @@ export default async function TeacherPage({ params, searchParams }: { params: Pr
                 <tbody>
                   {lessons.map((l) => (
                     <tr key={l.id}>
-                      <td><Link href={`/lessons/${l.id}`}>{DAYS[l.weekday]} {hhmm(l.start_time)}</Link></td>
+                      <td><Link href={`/lessons/${l.id}`}>{lessonWhen(l)}</Link></td>
                       <td><Link href={`/students/${l.student_id}`}>{fullName(all.maps.student.get(l.student_id))}</Link></td>
                       <td>{all.maps.instrument.get(l.instrument_id)?.name}</td>
-                      <td>{all.roomLabel(l.room_id)}</td>
+                      <td>{l.at_home ? 'בבית המורה' : all.roomLabel(l.room_id)}</td>
                       <td><StatusBadge status={l.status} /></td>
                     </tr>
                   ))}
@@ -200,6 +211,8 @@ export default async function TeacherPage({ params, searchParams }: { params: Pr
               <p>מקהלות: {choirs.map((c) => <Link key={c.id} className="chip" href={`/choirs/${c.id}`}>{c.name}</Link>)}</p>
             )}
           </section>
+
+          <TeacherHistory all={all} history={history!} teacherId={t.id} month={month} />
 
           <form action={deleteTeacher}>
             <input type="hidden" name="id" value={t.id} />

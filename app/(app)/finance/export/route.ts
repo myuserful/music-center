@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
   if (error) return new Response(error.message, { status: 500 });
   const transactions = (data ?? []) as Transaction[];
   const manual = new Map(transactions.map((t) => [t.id, t]));
-  const entries = buildEntries(transactions, billing.payments, billing.charges, (id) => fullName(all.maps.student.get(id)))
+  const entries = buildEntries(transactions, billing.payments, (id) => fullName(all.maps.student.get(id)))
     .filter((e) => e.date.startsWith(`${year}-`))
     .sort((a, b) => a.date.localeCompare(b.date));
   const tx = (e: Entry) => (e.source === 'manual' ? manual.get(e.id) : undefined);

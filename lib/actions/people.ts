@@ -1,9 +1,9 @@
 'use server';
 
 import {
-  DEFAULT_LANGUAGE, GENDER_LABELS, LESSON_MINUTES, HEALTH_FUND_LABELS, INTEREST_LABELS, PAYMENT_TRACKS, STUDENT_STATUSES,
+  COMMITMENT_FUNDS, DEFAULT_LANGUAGE, GENDER_LABELS, LESSON_MINUTES, HEALTH_FUND_LABELS, INTEREST_LABELS, PAYMENT_TRACKS, STUDENT_STATUSES,
   TEACHER_GENDER_LABELS,
-  type Gender, type HealthFund, type Interest, type TeacherGender,
+  type CommitmentFund, type Gender, type HealthFund, type Interest, type TeacherGender,
 } from '../constants';
 import { createClient } from '../supabase/server';
 import { overlaps, toMin } from '../time';
@@ -35,20 +35,33 @@ export async function saveTeacher(fd: FormData) {
     interest: oneOf(str(fd, 'interest'), Object.keys(INTEREST_LABELS) as Interest[]),
     days_per_week: num(fd, 'days_per_week'),
     languages: languageList(fd),
+    min_weekly_hours: num(fd, 'min_weekly_hours'),
   };
   // באקסל לחלק מהמורים יש רק שם פרטי
   if (!row.first_name) fail(here, 'חסר שם פרטי');
   if (row.gender !== 'female') row.teaches_young_boys = false;
 
+  // עד שמריצים את 0046 אין עמודת מינימום: שומרים בלעדיה
+  const { min_weekly_hours: minWeekly, ...base } = row;
   let teacherId = id;
+  let skippedMin = false;
   if (id) {
-    const { error } = await db.from('teachers').update(row).eq('id', id);
+    let { error } = await db.from('teachers').update(row).eq('id', id);
+    if (error?.code === 'PGRST204') {
+      ({ error } = await db.from('teachers').update(base).eq('id', id));
+      skippedMin = minWeekly != null;
+    }
     if (error) fail(here, dbMessage(error));
   } else {
-    const { data, error } = await db.from('teachers').insert(row).select('id').single();
+    let { data, error } = await db.from('teachers').insert(row).select('id').single();
+    if (error?.code === 'PGRST204') {
+      ({ data, error } = await db.from('teachers').insert(base).select('id').single());
+      skippedMin = minWeekly != null;
+    }
     if (error || !data) fail(here, dbMessage(error!));
     teacherId = data!.id;
   }
+  if (skippedMin) fail(`/teachers/${teacherId}`, 'נשמר, חוץ ממינימום השעות בשבוע: צריך להריץ את 0046_teacher_pay.sql ב-Supabase');
 
   // כלי נגינה וסניפים: מחליפים את כל הרשימה (שתי הטבלאות במקביל)
   const instrumentIds = fd.getAll('instrument_ids').map(Number);
@@ -115,8 +128,8 @@ async function roomClash(
 }
 
 /**
- * עדכון שעות עבודה קיימות (יום, שעות, חדר). השיעורים של המורה בשעות האלה עוברים לחדר שנבחר,
- * חוץ משיעורים שבזמן שלהם החדר תפוס (שיעור של מורה אחר/ת או מקהלה) - הם נשארים בחדר שלהם.
+ * עדכון שעות עבודה קיימות (יום, שעות, חדר). כל השיעורים של המורה בשעות האלה עוברים לחדר שנבחר,
+ * גם אם החדר תפוס באותו זמן (שיעור של מורה אחר/ת או מקהלה) - החדר החדש גובר והשיעורים יופיעו כחופפים.
  */
 export async function updateTeacherHours(fd: FormData) {
   const db = await createClient();
@@ -140,14 +153,12 @@ export async function updateTeacherHours(fd: FormData) {
   if ((same ?? []).some((h) => overlaps(start, end, toMin(h.start_time), toMin(h.end_time)))) {
     fail(here, 'השעות חופפות לשעות עבודה אחרות של המורה ביום הזה');
   }
-  const clash = await roomClash(db, row.room_id, weekday, row.start_time, row.end_time, teacherId);
-  if (clash) fail(here, clash);
-
+  // בכוונה בלי בדיקת חדר תפוס: החדר החדש גובר, גם אם יש בו שעות/שיעורים של מורה אחר/ת
   const { error } = await db.from('teacher_hours').update(row).eq('id', id);
   if (error) fail(here, dbMessage(error));
 
   const [{ data: dayLessons }, { data: dayChoirs }] = await Promise.all([
-    db.from('lessons').select('id,teacher_id,room_id,start_time,students(first_name,last_name)').eq('weekday', weekday),
+    db.from('lessons').select('id,teacher_id,room_id,start_time').eq('weekday', weekday),
     db.from('choirs').select('room_id,start_time,end_time').eq('weekday', weekday),
   ]);
   const lessons = (dayLessons ?? []).filter((l) => l.teacher_id === teacherId && toMin(l.start_time) >= start && toMin(l.start_time) < end);
@@ -156,29 +167,23 @@ export async function updateTeacherHours(fd: FormData) {
   const outside = (dayLessons ?? []).filter((l) => l.teacher_id === teacherId &&
     !blocks.some(([a, b]) => toMin(l.start_time) >= a && toMin(l.start_time) < b)).length;
 
-  // העברת השיעורים לחדר החדש
-  let moved = 0;
-  const blocked: string[] = [];
-  if (row.room_id) {
-    for (const l of lessons) {
-      if (l.room_id === row.room_id) continue;
-      const s = toMin(l.start_time);
-      const busy = (dayLessons ?? []).some((o) => o.id !== l.id && o.teacher_id !== teacherId && o.room_id === row.room_id &&
-        overlaps(s, s + LESSON_MINUTES, toMin(o.start_time), toMin(o.start_time) + LESSON_MINUTES)) ||
-        (dayChoirs ?? []).some((c) => c.room_id === row.room_id && overlaps(s, s + LESSON_MINUTES, toMin(c.start_time), toMin(c.end_time)));
-      const st = l.students as unknown as { first_name: string; last_name: string } | null;
-      const who = `${l.start_time.slice(0, 5)} ${st ? `${st.first_name} ${st.last_name}`.trim() : ''}`.trim();
-      if (busy) { blocked.push(who); continue; }
-      const { error: e } = await db.from('lessons').update({ room_id: row.room_id }).eq('id', l.id);
-      if (e) blocked.push(who); else moved++;
-    }
+  // העברת כל השיעורים של המורה בשעות האלה לחדר החדש, גם כשהחדר תפוס (אז הם יופיעו כחופפים)
+  const toMove = row.room_id ? lessons.filter((l) => l.room_id !== row.room_id) : [];
+  if (toMove.length) {
+    const { error: e } = await db.from('lessons').update({ room_id: row.room_id }).in('id', toMove.map((l) => l.id));
+    if (e) fail(here, `שעות העבודה עודכנו, אבל העברת השיעורים לחדר נכשלה: ${dbMessage(e)}`);
   }
+  const clashing = toMove.filter((l) => {
+    const s = toMin(l.start_time);
+    return (dayLessons ?? []).some((o) => o.teacher_id !== teacherId && o.room_id === row.room_id &&
+      overlaps(s, s + LESSON_MINUTES, toMin(o.start_time), toMin(o.start_time) + LESSON_MINUTES)) ||
+      (dayChoirs ?? []).some((c) => c.room_id === row.room_id && overlaps(s, s + LESSON_MINUTES, toMin(c.start_time), toMin(c.end_time)));
+  }).length;
 
   const parts = ['שעות העבודה עודכנו'];
-  if (moved) parts.push(`${moved} שיעורים הועברו לחדר`);
-  if (blocked.length) parts.push(`לא הועברו כי החדר תפוס: ${blocked.join(', ')}`);
+  if (toMove.length) parts.push(`${toMove.length} שיעורים הועברו לחדר`);
+  if (clashing) parts.push(`שימו לב: ${clashing} מהם חופפים לשיעורים אחרים בחדר`);
   if (outside) parts.push(`שימו לב: ${outside} שיעורים של המורה ביום הזה מחוץ לשעות העבודה`);
-  if (blocked.length) fail(here, parts.join('. '));
   done(here, parts.join('. '));
 }
 
@@ -238,24 +243,46 @@ export async function saveStudent(fd: FormData) {
     preferred_times: str(fd, 'preferred_times'),
     language: str(fd, 'language') || DEFAULT_LANGUAGE,
     payment_track: oneOf(str(fd, 'payment_track'), PAYMENT_TRACKS) ?? 'unknown',
+    /** ערך ישן מלפני 0041 שלא שונה בטופס: לא נוגעים בו */
+    legacy_track: ['maccabi', 'commitment'].includes(str(fd, 'payment_track')),
     standing_order: fd.get('standing_order') === 'on',
+    contract_signed: fd.get('contract_signed') === 'on',
+    card_on_file: fd.get('card_on_file') === 'on',
+    email: str(fd, 'email'),
+    no_email: fd.get('no_email') === 'on',
     needs_review: fd.get('needs_review') === 'on',
   };
   if (!row.first_name || !row.last_name) fail(here, 'חסר שם פרטי או שם משפחה');
   if (row.three_digits && !/^\d{3}$/.test(row.three_digits)) fail(here, 'בשדה "שלוש ספרות" צריך להיות בדיוק 3 ספרות');
+  if (row.no_email) row.email = '';
+  if (row.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) fail(here, 'כתובת המייל לא תקינה');
+  if (!id && !row.email && !row.no_email) fail(here, 'חסר מייל (או לסמן "אין מייל")');
   if (!row.health_fund) row.health_plan = '';
   // למה ממתינים: נשמר רק כשהשדה מוצג (סטטוס רשימת המתנה), אחרת נשאר מה שהיה
   const waiting = row.status === 'waiting' ? { waiting_reason: str(fd, 'waiting_reason') } : {};
-  // פרטי ומכבי ידועים מראש לפי הקופה. בשאר הקופות צריך לוודא שיש התחייבות
-  if (row.payment_track === 'unknown' && (row.health_fund === 'private' || row.health_fund === 'maccabi'))
-    row.payment_track = row.health_fund;
+  // המסלול לפי הקופה כשעוד לא נקבע: פרטי, או פיקדון בקופות האחרות. במכבי צריך לבחור אחת משתי האפשרויות
+  if (row.payment_track === 'unknown' && row.health_fund === 'private') row.payment_track = 'private';
+  if (row.payment_track === 'unknown' && COMMITMENT_FUNDS.includes(row.health_fund as CommitmentFund)) row.payment_track = 'fund_deposit';
+
+  const { legacy_track: legacy, ...fields } = row;
+  const save = legacy ? (({ payment_track: _, ...rest }) => rest)(fields) : fields;
+
+  // עד שמריצים את 0044 / 0046: שומרים את כל השאר, בלי חוזה, אשראי ומייל
+  const without = ({ contract_signed: _c, card_on_file: _k, email: _e, no_email: _n, ...rest }: typeof save) => rest;
+  const NEED_0044 = 'נשמר, חוץ מחוזה, אשראי ומייל: צריך להריץ את 0044_contract_card.sql ו-0046_student_email.sql ב-Supabase';
 
   if (id) {
-    const { error } = await db.from('students').update({ ...row, ...waiting }).eq('id', id);
+    const { error } = await db.from('students').update({ ...save, ...waiting }).eq('id', id);
+    if (error?.code === 'PGRST204') {
+      const { error: e } = await db.from('students').update({ ...without(save), ...waiting }).eq('id', id);
+      if (e) fail(here, dbMessage(e));
+      fail(here, NEED_0044);
+    }
     if (error) fail(here, dbMessage(error));
     done(here);
   }
-  const { data, error } = await db.from('students').insert({ ...row, ...waiting }).select('id').single();
+  let { data, error } = await db.from('students').insert({ ...save, ...waiting }).select('id').single();
+  if (error?.code === 'PGRST204') ({ data, error } = await db.from('students').insert({ ...without(save), ...waiting }).select('id').single());
   if (error || !data) fail(here, dbMessage(error!));
 
   // איש קשר ראשי אופציונלי כבר ביצירה

@@ -1,7 +1,7 @@
 'use server';
 
 import { createClient } from '../supabase/server';
-import { validateChoir, validateEnrollment, validateLesson } from '../rules';
+import { validateChoir, validateEnrollment, validateHomeLesson, validateLesson, validatePairPartner } from '../rules';
 import { LESSON_MINUTES, STATUSES, type Status } from '../constants';
 import { overlaps, toMin } from '../time';
 import { backTo, dbMessage, done, fail, num, status, str } from './util';
@@ -97,12 +97,43 @@ export async function moveLesson(id: number, input: {
   }
   const row = { ...input, student_id: lesson.student_id as number, room_id: roomId };
   const err = await validateLesson(db, row, id);
+  // שיעור שהיה בבית המורה חוזר למערכת השעות
+  Object.assign(row, { at_home: false, home_slot: null });
   if (err) return { ok: false, error: err };
 
   const { error } = await db.from('lessons').update(row).eq('id', id);
   if (error) return { ok: false, error: dbMessage(error) };
   return { ok: true, message: 'השיעור הועבר' };
 }
+
+/** לימוד בבית המורה מלוח הגרירה: תלמיד/ה + מורה + מספר משבצת (בלי יום, שעה וחדר) */
+export async function quickAssignHome(input: {
+  student_id: number; teacher_id: number; instrument_id: number; home_slot: number;
+}): Promise<QuickAssignResult> {
+  const db = await createClient();
+  const err = await validateHomeLesson(db, input);
+  if (err) return { ok: false, error: err };
+  const { error } = await db.from('lessons').insert({ ...homeRow(input.home_slot), ...input, status: 'pending', notes: '' });
+  if (error) return { ok: false, error: dbMessage(error) };
+  return { ok: true, message: 'שובץ/ה ללימוד בבית המורה (ממתין לאישור הורים)' };
+}
+
+/** העברת שיעור ללימוד בבית המורה (או למשבצת בית אחרת). הסטטוס נשמר. */
+export async function moveLessonHome(id: number, input: {
+  teacher_id: number; instrument_id: number; home_slot: number;
+}): Promise<QuickAssignResult> {
+  const db = await createClient();
+  const { data: lesson } = await db.from('lessons').select('student_id').eq('id', id).single();
+  if (!lesson) return { ok: false, error: 'השיעור לא נמצא' };
+  const err = await validateHomeLesson(db, { ...input, student_id: lesson.student_id as number }, id);
+  if (err) return { ok: false, error: err };
+  const { error } = await db.from('lessons').update({ ...homeRow(input.home_slot), ...input }).eq('id', id);
+  if (error) return { ok: false, error: dbMessage(error) };
+  return { ok: true, message: 'השיעור הועבר ללימוד בבית' };
+}
+
+/** שדות של שיעור בבית: מספר משבצת, בלי יום/שעה/חדר */
+const homeRow = (slot: number) => ({ at_home: true, home_slot: slot, weekday: null, start_time: null, room_id: null });
 
 /** שינוי סטטוס שיעור מלוח הגרירה (למשל אישור הורים) בלי מעבר עמוד */
 export async function changeLessonStatus(id: number, next: Status): Promise<QuickAssignResult> {
@@ -137,6 +168,7 @@ export async function saveLesson(fd: FormData) {
   const here = backTo(fd, id ? `/lessons/${id}` : '/lessons/new');
 
   const teacherId = num(fd, 'teacher_id');
+  if (fd.get('at_home') === '1') return saveHomeLesson(db, fd, id, here, teacherId);
   let roomId = num(fd, 'room_id');
   const weekday = num(fd, 'weekday');
   const startTime = str(fd, 'start_time');
@@ -153,12 +185,18 @@ export async function saveLesson(fd: FormData) {
     start_time: startTime,
     status: status(fd),
     notes: str(fd, 'notes'),
+    at_home: false,
+    home_slot: null,
   };
   if (!row.student_id || !row.teacher_id || !row.instrument_id || row.weekday === null || !row.start_time)
     fail(here, 'יש למלא תלמיד/ה, מורה, כלי, יום ושעה');
   if (!row.room_id) fail(here, 'יש לבחור חדר (לא הוגדר חדר לשעות העבודה של המורה ביום הזה)');
 
-  const err = await validateLesson(db, row as Parameters<typeof validateLesson>[1], id ?? undefined);
+  // שיעור בזוג שנשאר באותו מורה, יום ושעה - נשאר בזוג (בשינוי שעה או מורה הוא נפרד מבן/בת הזוג)
+  const current = id ? (await db.from('lessons').select('*').eq('id', id).maybeSingle()).data : null;
+  const pair = !!current?.pair && current.teacher_id === row.teacher_id && current.weekday === row.weekday
+    && toMin(current.start_time ?? '') === toMin(row.start_time);
+  const err = await validateLesson(db, { ...row, pair } as Parameters<typeof validateLesson>[1], id ?? undefined);
   if (err) fail(here, err);
 
   const { error } = id
@@ -166,6 +204,61 @@ export async function saveLesson(fd: FormData) {
     : await db.from('lessons').insert(row);
   if (error) fail(here, dbMessage(error));
   done(str(fd, 'after') || `/students/${row.student_id}`, 'השיעור נשמר');
+}
+
+async function saveHomeLesson(
+  db: Awaited<ReturnType<typeof createClient>>, fd: FormData, id: number | null, here: string, teacherId: number | null,
+) {
+  const row = {
+    student_id: num(fd, 'student_id'),
+    teacher_id: teacherId,
+    instrument_id: num(fd, 'instrument_id'),
+    status: status(fd),
+    notes: str(fd, 'notes'),
+    ...homeRow(num(fd, 'home_slot') ?? 0),
+  };
+  if (!row.student_id || !row.teacher_id || !row.instrument_id) fail(here, 'יש למלא תלמיד/ה, מורה וכלי');
+  if (row.home_slot < 1) fail(here, 'יש לבחור מספר משבצת ללימוד בבית');
+
+  const err = await validateHomeLesson(db, row as Parameters<typeof validateHomeLesson>[1], id ?? undefined);
+  if (err) fail(here, err);
+
+  const { error } = id
+    ? await db.from('lessons').update(row).eq('id', id)
+    : await db.from('lessons').insert(row);
+  if (error) fail(here, dbMessage(error));
+  done(str(fd, 'after') || `/students/${row.student_id}`, 'השיעור נשמר');
+}
+
+/**
+ * שיעור בזוג: צירוף תלמיד/ה שני/ה לשיעור קיים (אותו מורה, יום, שעה, חדר וכלי).
+ * שני השיעורים מסומנים "בזוג": מכל 4 שיעורים כל אחד/ת משלם/ת על 3 והרביעי חינם
+ */
+export async function addPairStudent(fd: FormData) {
+  const db = await createClient();
+  const id = num(fd, 'id')!;
+  const studentId = num(fd, 'student_id');
+  const here = backTo(fd, `/lessons/${id}`);
+  if (!studentId) fail(here, 'יש לבחור תלמיד/ה');
+  const { data: lesson } = await db.from('lessons').select('*').eq('id', id).maybeSingle();
+  if (!lesson) fail(here, 'השיעור לא נמצא');
+  if (lesson!.at_home) fail(here, 'שיעור בזוג אפשר רק בשיעור במרכז (עם יום ושעה)');
+
+  const err = await validatePairPartner(db, lesson!, studentId!);
+  if (err) fail(here, err);
+
+  // קודם השיעור הקיים מסומן בזוג (אחרת המסד לא מאפשר שיעור שני באותה שעה)
+  const { error: pe } = await db.from('lessons').update({ pair: true }).eq('id', id);
+  if (pe) fail(here, pe.code === '42703' || pe.code === 'PGRST204' ? 'צריך להריץ את 0049_pair_lessons.sql ב-Supabase' : dbMessage(pe));
+  const { error } = await db.from('lessons').insert({
+    student_id: studentId, teacher_id: lesson!.teacher_id, instrument_id: lesson!.instrument_id, room_id: lesson!.room_id,
+    weekday: lesson!.weekday, start_time: lesson!.start_time, status: 'pending', notes: '', at_home: false, home_slot: null, pair: true,
+  });
+  if (error) {
+    await db.from('lessons').update({ pair: false }).eq('id', id);
+    fail(here, dbMessage(error));
+  }
+  done(here, 'התלמיד/ה צורף/ה לשיעור בזוג (ממתין לאישור הורים)');
 }
 
 export async function setLessonStatus(fd: FormData) {

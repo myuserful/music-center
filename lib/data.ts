@@ -3,8 +3,9 @@ import { freeSlots, type Busy } from './availability';
 import { DAYS, LESSON_MINUTES } from './constants';
 import { toMin } from './time';
 import type { DB } from './supabase/server';
+import { isTimed } from './types';
 import type {
-  BillingSettings, Branch, Charge, Choir, Contact, Enrollment, FundRate, Instrument, Lesson, Payment, Room, Student,
+  BillingSettings, Branch, Charge, Choir, Contact, DayClosure, DayLesson, Enrollment, Instrument, Receipt, ReceiptCertificate, TeacherExtra, TeacherPayroll, Lesson, Payment, Room, Student,
   Teacher, TeacherHours,
 } from './types';
 
@@ -91,9 +92,12 @@ export async function loadAll(db: DB) {
   const teacherBranchIds = (teacherId: number) =>
     data.teacherBranches.filter((x) => x.teacher_id === teacherId).map((x) => x.branch_id);
 
+  /** שיעורים במערכת השעות (בלי שיעורים בבית המורה) */
+  const timedLessons = data.lessons.filter(isTimed);
+
   /** זמנים תפוסים של מורה (שיעורים + מקהלות) */
   const teacherBusy = (teacherId: number): Busy[] => [
-    ...data.lessons.filter((l) => l.teacher_id === teacherId)
+    ...timedLessons.filter((l) => l.teacher_id === teacherId)
       .map((l) => ({ weekday: l.weekday, start: toMin(l.start_time), end: toMin(l.start_time) + LESSON_MINUTES })),
     ...data.choirs.filter((c) => c.teacher_id === teacherId)
       .map((c) => ({ weekday: c.weekday, start: toMin(c.start_time), end: toMin(c.end_time) })),
@@ -107,7 +111,7 @@ export async function loadAll(db: DB) {
   ]);
   const unassigned = data.students.filter((s) => s.status === 'active' && !assignedStudentIds.has(s.id));
 
-  return { ...data, maps, roomLabel, teacherRooms, primaryContact, teacherInstrumentIds, teacherBranchIds, teacherFree, unassigned };
+  return { ...data, timedLessons, maps, roomLabel, teacherRooms, primaryContact, teacherInstrumentIds, teacherBranchIds, teacherFree, unassigned };
 }
 
 export type All = Awaited<ReturnType<typeof loadAll>>;
@@ -116,28 +120,113 @@ export type All = Awaited<ReturnType<typeof loadAll>>;
 export async function loadBilling(db: DB, studentId?: number) {
   if (tryRpc(noRpc.billing)) {
     const rpc = await db.rpc('billing_data', { p_student: studentId ?? null });
-    if (!rpc.error) {
-      const d = rpc.data as { settings: BillingSettings; rates: FundRate[]; charges: Charge[]; payments: Payment[] };
-      return { settings: d.settings, rates: d.rates, charges: d.charges, payments: d.payments };
+    const d = rpc.data as { settings: BillingSettings; charges: Charge[]; payments: Payment[]; rates?: unknown } | null;
+    // הגרסה הישנה של הפונקציה (לפני 0041) מחזירה גם rates ואת החיובים הישנים: לא משתמשים בה
+    if (!rpc.error && d && !('rates' in d)) {
+      return { settings: d.settings, charges: d.charges, payments: d.payments, missing: false };
     }
-    if (rpc.error.code !== 'PGRST202') throw new Error(rpc.error.message);
+    if (rpc.error && rpc.error.code !== 'PGRST202' && !['42P01', '42703'].includes(rpc.error.code)) throw new Error(rpc.error.message);
     noRpc.billing = Date.now();
   }
 
-  const charges = db.from('charges').select('*').order('month', { ascending: false }).order('id');
+  const charges = db.from('lesson_charges').select('*').order('due_date').order('id');
   const payments = db.from('payments').select('*').order('paid_on', { ascending: false }).order('id', { ascending: false });
-  const [settings, rates, c, p] = await Promise.all([
+  const [settings, c, p] = await Promise.all([
     db.from('billing_settings').select('*').single(),
-    db.from('fund_rates').select('*'),
     studentId ? charges.eq('student_id', studentId) : charges,
     studentId ? payments.eq('student_id', studentId) : payments,
   ]);
-  const firstError = [settings, rates, c, p].find((r) => r.error)?.error;
+  // עד שמריצים את 0041: אין טבלת חיובים. מציגים בלי חיובים, עם הודעה
+  const missing = c.error?.code === '42P01' || c.error?.code === 'PGRST205';
+  const firstError = [settings, missing ? { error: null } : c, p].find((r) => r.error)?.error;
   if (firstError) throw new Error(firstError.message);
+  const defaults: BillingSettings = {
+    price_private: 75, price_maccabi_full: 140, price_maccabi_upfront: 45, price_maccabi_later: 95,
+    price_fund_deposit: 75, maccabi_later_months: 2, price_trial: 55,
+  };
   return {
-    settings: settings.data as BillingSettings,
-    rates: rates.data as FundRate[],
-    charges: c.data as Charge[],
-    payments: p.data as Payment[],
+    settings: missing ? defaults : settings.data as BillingSettings,
+    charges: missing ? [] : c.data as Charge[],
+    payments: (p.data as Payment[]).map((x) => ({ ...x, refund: x.refund ?? false, maccabi_amount: Number(x.maccabi_amount ?? 0) })),
+    missing,
+  };
+}
+
+/** סגירת יום: השיעורים שנשמרו והמורים שסגרו את היום */
+export async function loadDay(db: DB, date: string) {
+  const [lessons, closures, sub] = await Promise.all([
+    db.from('day_lessons').select('*').eq('lesson_date', date).order('start_time'),
+    db.from('day_closures').select('*').eq('lesson_date', date),
+    // 0040 (מילוי מקום) כבר הורצה?
+    db.from('day_lessons').select('substitute_id').limit(1),
+  ]);
+  const firstError = [lessons, closures].find((r) => r.error)?.error;
+  // עד שמריצים את 0039: מציגים את מערכת השעות הקבועה, בלי אפשרות לשמור
+  if (firstError?.code === '42P01' || firstError?.code === 'PGRST205') {
+    return { lessons: [] as DayLesson[], closures: [] as DayClosure[], missingTables: true, missingSubstitute: true };
+  }
+  if (firstError) throw new Error(firstError.message);
+  return { lessons: lessons.data as DayLesson[], closures: closures.data as DayClosure[], missingTables: false,
+    missingSubstitute: sub.error?.code === '42703' || sub.error?.code === 'PGRST204',
+  };
+}
+
+/**
+ * היסטוריית שיעורים מסגירות יום, של תלמיד/ה או של מורה (כולל מילוי מקום).
+ * month: "2026-10" לחודש אחד, ריק = הכול
+ */
+export async function loadHistory(db: DB, who: { student: number } | { teacher: number }, month = '') {
+  let q = db.from('day_lessons').select('*').order('lesson_date', { ascending: false }).order('start_time');
+  q = 'student' in who ? q.eq('student_id', who.student) : q.or(`teacher_id.eq.${who.teacher},substitute_id.eq.${who.teacher}`);
+  if (/^\d{4}-\d{2}$/.test(month)) {
+    const [y, m] = month.split('-').map(Number);
+    const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+    q = q.gte('lesson_date', `${month}-01`).lt('lesson_date', `${next}-01`);
+  }
+  const lessons = await q;
+  if (lessons.error) {
+    if (['42P01', 'PGRST205', '42703'].includes(lessons.error.code)) return { lessons: [] as DayLesson[], closures: [] as DayClosure[] };
+    throw new Error(lessons.error.message);
+  }
+  const rows = lessons.data as DayLesson[];
+  const dates = [...new Set(rows.map((r) => r.lesson_date))];
+  if (!dates.length) return { lessons: rows, closures: [] as DayClosure[] };
+  const closures = await db.from('day_closures').select('*').in('lesson_date', dates);
+  if (closures.error) throw new Error(closures.error.message);
+  return { lessons: rows, closures: closures.data as DayClosure[] };
+}
+
+/** הקבלות (של תלמיד/ה אחד/ת, או של כולם). עד שמריצים את 0042 - רשימה ריקה */
+export async function loadReceipts(db: DB, studentId?: number): Promise<{ receipts: Receipt[]; missing: boolean }> {
+  const q = db.from('receipts').select('*').order('issued_on', { ascending: false }).order('id', { ascending: false });
+  const { data, error } = await (studentId ? q.eq('student_id', studentId) : q);
+  if (error?.code === '42P01' || error?.code === 'PGRST205') return { receipts: [], missing: true };
+  if (error) throw new Error(error.message);
+  return { receipts: data as Receipt[], missing: false };
+}
+
+/** אישורי קבלה לקופות שהופקו, מהחדש לישן. missing = עוד לא הורץ 0048 */
+export async function loadCertificates(db: DB, studentId?: number): Promise<{ certificates: ReceiptCertificate[]; missing: boolean }> {
+  const q = db.from('receipt_certificates').select('*').order('created_at', { ascending: false });
+  const { data, error } = await (studentId ? q.eq('student_id', studentId) : q);
+  if (error?.code === '42P01' || error?.code === 'PGRST205') return { certificates: [], missing: true };
+  if (error) throw new Error(error.message);
+  return { certificates: data as ReceiptCertificate[], missing: false };
+}
+
+/** שכר מורים לחודש: השיעורים מסגירות היום (כולל סוף השבוע האחרון), התוספות, ומה שכבר אושר. עד 0046 - בלי תוספות ואישורים */
+export async function loadPayroll(db: DB, range: { first: string; to: string }) {
+  const [lessons, closures, extras, payroll] = await Promise.all([
+    db.from('day_lessons').select('*').gte('lesson_date', range.first).lte('lesson_date', range.to),
+    db.from('day_closures').select('*').gte('lesson_date', range.first).lte('lesson_date', range.to),
+    db.from('teacher_extras').select('*').gte('extra_date', range.first).lte('extra_date', range.to).order('extra_date'),
+    db.from('teacher_payroll').select('*').eq('month', range.first),
+  ]);
+  const err = [lessons, closures].find((r) => r.error)?.error;
+  if (err) throw new Error(err.message);
+  const missing = !!(extras.error || payroll.error);
+  return {
+    lessons: lessons.data as DayLesson[], closures: closures.data as DayClosure[],
+    extras: (extras.data ?? []) as TeacherExtra[], payroll: (payroll.data ?? []) as TeacherPayroll[], missing,
   };
 }

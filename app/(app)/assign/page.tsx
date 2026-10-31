@@ -5,7 +5,7 @@ import { CHOIR_INSTRUMENT, STUDENT_STATUS_LABELS } from '@/lib/constants';
 import { loadAll } from '@/lib/data';
 import { createClient } from '@/lib/supabase/server';
 import { toMin } from '@/lib/time';
-import { fullName } from '@/lib/types';
+import { fullName, isTimed, type Lesson } from '@/lib/types';
 
 export default async function AssignPage({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
@@ -13,6 +13,20 @@ export default async function AssignPage({ searchParams }: { searchParams: SP })
   const all = await loadAll(db);
   const { maps } = all;
   const choirInstrumentId = all.instruments.find((i) => i.name === CHOIR_INSTRUMENT)?.id;
+
+  const boardLesson = (l: Lesson) => {
+    const s = maps.student.get(l.student_id);
+    return {
+      id: l.id, weekday: l.weekday ?? -1, start: l.start_time ? toMin(l.start_time) : -1, slot: l.home_slot,
+      status: l.status, studentId: l.student_id, student: fullName(s),
+      instrumentId: l.instrument_id, instrument: maps.instrument.get(l.instrument_id)?.name ?? '',
+      age: s ? ageLabel(s.birth_date, s.birth_date_approx) : '',
+      studentNotes: s?.notes ?? '', preferred: s?.preferred_times ?? '', lessonNotes: l.notes, pair: l.pair ?? false,
+      // אנשי קשר עם טלפון (הראשי קודם - כך הם ממוינים ב-loadAll)
+      contacts: all.contacts.filter((c) => c.student_id === l.student_id && c.phone)
+        .map((c) => ({ name: c.name, relation: c.relation, phone: c.phone })),
+    };
+  };
 
   const teachers: BoardTeacher[] = all.teachers.filter((t) => t.active).map((t) => ({
     id: t.id,
@@ -25,19 +39,8 @@ export default async function AssignPage({ searchParams }: { searchParams: SP })
       .map((i) => ({ id: i, name: maps.instrument.get(i)?.name ?? '' })),
     hours: all.hours.filter((h) => h.teacher_id === t.id)
       .map((h) => ({ id: h.id, weekday: h.weekday, start: toMin(h.start_time), end: toMin(h.end_time) })),
-    lessons: all.lessons.filter((l) => l.teacher_id === t.id).map((l) => {
-      const s = maps.student.get(l.student_id);
-      return {
-        id: l.id, weekday: l.weekday, start: toMin(l.start_time), status: l.status,
-        studentId: l.student_id, student: fullName(s),
-        instrumentId: l.instrument_id, instrument: maps.instrument.get(l.instrument_id)?.name ?? '',
-        age: s ? ageLabel(s.birth_date, s.birth_date_approx) : '',
-        studentNotes: s?.notes ?? '', preferred: s?.preferred_times ?? '', lessonNotes: l.notes,
-        // אנשי קשר עם טלפון (הראשי קודם - כך הם ממוינים ב-loadAll)
-        contacts: all.contacts.filter((c) => c.student_id === l.student_id && c.phone)
-          .map((c) => ({ name: c.name, relation: c.relation, phone: c.phone })),
-      };
-    }),
+    lessons: all.lessons.filter((l) => l.teacher_id === t.id && isTimed(l)).map(boardLesson),
+    home: all.lessons.filter((l) => l.teacher_id === t.id && l.at_home).map(boardLesson),
     choirs: all.choirs.filter((c) => c.teacher_id === t.id).map((c) => ({
       id: c.id, name: c.name, weekday: c.weekday, start: toMin(c.start_time), end: toMin(c.end_time),
       members: all.enrollments.filter((e) => e.choir_id === c.id)
@@ -71,7 +74,7 @@ export default async function AssignPage({ searchParams }: { searchParams: SP })
 
   return (
     <>
-      <PageHead title="שיבוץ בגרירה" sub="גוררים תלמיד/ה למשבצת פנויה אצל מורה. כל שיעור חצי שעה ונשמר כ&quot;ממתין לאישור הורים&quot; - מאשרים בלחיצה על ✓ בשיעור." />
+      <PageHead title="שיבוץ בגרירה" sub="גוררים תלמיד/ה למשבצת פנויה אצל מורה. כל שיעור חצי שעה ונשמר כ&quot;ממתין לאישור הורים&quot; - מאשרים בלחיצה על ✓ בשיעור. תלמידות שלומדות בבית המורה גוררים לשורת 🏠 בתחתית הלוח של המורה." />
       <AssignBoard teachers={teachers} students={students} initialSelected={selected} />
     </>
   );

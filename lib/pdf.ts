@@ -85,41 +85,54 @@ export function pdfResponse(bytes: Uint8Array, filename: string, { inline = fals
 export type PdfColumn<T> = { header: string; width: number; value: (row: T) => string };
 
 /** טבלה פשוטה מימין לשמאל ב-PDF (A4), עם כותרת ומספור שורות (אפשר לבטל), על פני כמה עמודים לפי הצורך */
-export async function pdfTableResponse<T>(
-  title: string, columns: PdfColumn<T>[], rows: T[], { numbered = true } = {},
+export function pdfTableResponse<T>(
+  title: string, columns: PdfColumn<T>[], rows: T[], { numbered = true, inline = false } = {},
+): Promise<Response> {
+  const subtitle = `${rows.length} ${numbered ? 'תלמידים' : 'ת"ז'} · ${isoDate(new Date()).split('-').reverse().join('/')}`;
+  return pdfSectionsResponse(title, [{ title, subtitle, columns, rows }], { numbered, inline });
+}
+
+export type PdfSection<T> = { title: string; subtitle: string; columns: PdfColumn<T>[]; rows: T[] };
+
+/** כמה טבלאות בקובץ אחד, כל אחת מתחילה בעמוד חדש (למשל דף לכל מורה) */
+export async function pdfSectionsResponse<T>(
+  title: string, sections: PdfSection<T>[], { numbered = true, inline = false } = {},
 ): Promise<Response> {
   const doc = await PDFDocument.create();
   const fonts = await loadFonts(doc);
   doc.setTitle(title);
 
   const W = 595, H = 842, M = 48, ROW = 22, SIZE = 11;
-  const cols: PdfColumn<T>[] = numbered ? [{ header: '#', width: 30, value: () => '' }, ...columns] : columns;
   let page = doc.addPage([W, H]);
   let y = H - M;
 
-  const header = () => {
-    let right = W - M;
-    for (const c of cols) { drawRight(page, fonts, c.header, right - 4, y, SIZE, 0.4); right -= c.width; }
-    y -= 8;
-    page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 1, color: rgb(0.8, 0.8, 0.85) });
-    y -= ROW - 6;
-  };
+  sections.forEach((section, si) => {
+    if (si > 0) { page = doc.addPage([W, H]); y = H - M; }
+    const cols: PdfColumn<T>[] = numbered ? [{ header: '#', width: 30, value: () => '' }, ...section.columns] : section.columns;
+    const header = () => {
+      let right = W - M;
+      for (const c of cols) { drawRight(page, fonts, c.header, right - 4, y, SIZE, 0.4); right -= c.width; }
+      y -= 8;
+      page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 1, color: rgb(0.8, 0.8, 0.85) });
+      y -= ROW - 6;
+    };
 
-  drawRight(page, fonts, title, W - M, y, 18);
-  y -= 22;
-  drawRight(page, fonts, `${rows.length} ${numbered ? 'תלמידים' : 'ת"ז'} · ${isoDate(new Date()).split('-').reverse().join('/')}`, W - M, y, 10, 0.4);
-  y -= 30;
-  header();
+    drawRight(page, fonts, section.title, W - M, y, 18);
+    y -= 22;
+    drawRight(page, fonts, section.subtitle, W - M, y, 10, 0.4);
+    y -= 30;
+    header();
 
-  rows.forEach((row, i) => {
-    if (y < M) { page = doc.addPage([W, H]); y = H - M; header(); }
-    let right = W - M;
-    for (const c of cols) {
-      drawRight(page, fonts, c.header === '#' ? String(i + 1) : c.value(row), right - 4, y, SIZE, c.header === '#' ? 0.5 : 0);
-      right -= c.width;
-    }
-    y -= ROW;
+    section.rows.forEach((row, i) => {
+      if (y < M) { page = doc.addPage([W, H]); y = H - M; header(); }
+      let right = W - M;
+      for (const c of cols) {
+        drawRight(page, fonts, c.header === '#' ? String(i + 1) : c.value(row), right - 4, y, SIZE, c.header === '#' ? 0.5 : 0);
+        right -= c.width;
+      }
+      y -= ROW;
+    });
   });
 
-  return pdfResponse(await doc.save(), `${title} ${isoDate(new Date())}.pdf`);
+  return pdfResponse(await doc.save(), `${title} ${isoDate(new Date())}.pdf`, { inline });
 }

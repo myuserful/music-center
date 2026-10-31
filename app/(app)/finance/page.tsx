@@ -6,7 +6,7 @@ import { copyRecurring, deleteTransaction, saveTransaction } from '@/lib/actions
 import { monthLabel, shekel } from '@/lib/billing';
 import { PARENTS_INCOME, SALARY_CATEGORY, TX_KIND_LABELS } from '@/lib/constants';
 import { loadAll, loadBilling } from '@/lib/data';
-import { buildEntries, byCategory, inMonth, salaryEstimate, totals, type Entry } from '@/lib/finance';
+import { buildEntries, byCategory, inMonth, totals, type Entry } from '@/lib/finance';
 import { createClient } from '@/lib/supabase/server';
 import { fullName, type Transaction } from '@/lib/types';
 
@@ -30,7 +30,7 @@ export default async function FinancePage({ searchParams }: { searchParams: SP }
   // תאריך ברירת מחדל לרישום: היום, או סוף החודש המוצג אם מסתכלים על חודש אחר
   const defaultDate = inMonth(today, month) ? today : lastDay;
 
-  const entries = buildEntries(transactions, billing.payments, billing.charges,
+  const entries = buildEntries(transactions, billing.payments,
     (id) => fullName(all.maps.student.get(id)));
   const monthEntries = entries.filter((e) => inMonth(e.date, month));
   const sum = totals(monthEntries);
@@ -45,13 +45,6 @@ export default async function FinancePage({ searchParams }: { searchParams: SP }
   const canCopy = transactions.some((t) => t.recurring && inMonth(t.occurred_on, prevMonth));
 
   const teachers = all.teachers.filter((t) => t.active);
-  const salaries = teachers.map((t) => ({
-    t,
-    ...salaryEstimate(t, all.lessons, all.choirs, month),
-    paid: transactions.filter((x) => x.kind === 'expense' && x.teacher_id === t.id && inMonth(x.occurred_on, month))
-      .reduce((n, x) => n + Number(x.amount), 0),
-  })).filter((s) => s.weeklyHours > 0 || s.paid > 0);
-
   const parentRows = monthEntries.filter((e) => e.source === 'parents');
   const ledger = monthEntries.filter((e) => e.source !== 'parents');
   const manual = new Map(transactions.map((t) => [t.id, t]));
@@ -130,46 +123,13 @@ export default async function FinancePage({ searchParams }: { searchParams: SP }
         )}
       </section>
 
-      <section className="card table-wrap">
+      <section className="card">
         <h2>שכר מורים: {monthLabel(month)}</h2>
-        <p className="muted">
-          הערכה לפי שיעורים סופיים ומקהלות כפול מספר הפעמים שהיום חל בחודש, כפול השכר לשעה (בכרטיס המורה).
-          לא כולל חגים וחופשות: אפשר לתקן את הסכום לפני הרישום.
+        <p>
+          השכר מחושב לפי השעות שהמורים לימדו בפועל (מסגירות היום), עם תוספות, בונוסים והשלמה למינימום.
+          כשמאשרים תשלום בדף שכר המורים, הוא נרשם כאן כהוצאה ({SALARY_CATEGORY}).
         </p>
-        {salaries.length === 0 ? <Empty>אין מורים עם שיעורים סופיים</Empty> : (
-          <table>
-            <thead><tr><th>מורה</th><th>שעות בשבוע</th><th>שעות בחודש</th><th>לשעה</th><th>הערכה</th><th>שולם החודש</th><th>רישום תשלום</th></tr></thead>
-            <tbody>
-              {salaries.map((s) => {
-                const left = s.amount == null ? null : Math.max(s.amount - s.paid, 0);
-                return (
-                  <tr key={s.t.id}>
-                    <td><Link href={`/teachers/${s.t.id}`}>{fullName(s.t)}</Link></td>
-                    <td>{s.weeklyHours}</td>
-                    <td>{s.hours}</td>
-                    <td>{s.t.hourly_rate == null ? <span className="muted">לא הוגדר</span> : shekel(Number(s.t.hourly_rate))}</td>
-                    <td>{shekel(s.amount)}</td>
-                    <td>{s.paid ? <strong className="fin-paid">{shekel(s.paid)}</strong> : <span className="muted">—</span>}</td>
-                    <td>
-                      <form action={saveTransaction} className="inline fin-salary">
-                        <input type="hidden" name="kind" value="expense" />
-                        <input type="hidden" name="category" value={SALARY_CATEGORY} />
-                        <input type="hidden" name="teacher_id" value={s.t.id} />
-                        <input type="hidden" name="counterparty" value={fullName(s.t)} />
-                        <input type="hidden" name="occurred_on" value={defaultDate} />
-                        <input type="hidden" name="method" value="bank_transfer" />
-                        <input type="hidden" name="notes" value={`שכר ${monthLabel(month)}`} />
-                        <input type="hidden" name="back" value={back} />
-                        <input type="number" name="amount" min="1" step="any" defaultValue={left || ''} aria-label="סכום" required />
-                        <button className="btn btn-xs">שולם</button>
-                      </form>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
+        <Link className="btn btn-primary" href={`/payroll?month=${month.slice(0, 7)}`}>לשכר מורים של {monthLabel(month)}</Link>
       </section>
 
       <section className="card table-wrap">

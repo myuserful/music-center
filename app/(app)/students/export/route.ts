@@ -1,12 +1,11 @@
 import type { NextRequest } from 'next/server';
 import { ageFrom } from '@/lib/age';
-import { DAYS, GENDER_LABELS, HEALTH_FUND_LABELS, STATUS_LABELS, STUDENT_STATUS_LABELS } from '@/lib/constants';
+import { GENDER_LABELS, HEALTH_FUND_LABELS, STATUS_LABELS, STUDENT_STATUS_LABELS } from '@/lib/constants';
 import { loadAll } from '@/lib/data';
 import { xlsxResponse, yesNo } from '@/lib/export';
 import { filterStudents, studentFilters } from '@/lib/filters';
 import { createClient } from '@/lib/supabase/server';
-import { hhmm } from '@/lib/time';
-import { fullName, type Student } from '@/lib/types';
+import { fullName, lessonWhen, type Student } from '@/lib/types';
 
 /** הורדת רשימת התלמידים (לפי הסינון הנוכחי) לאקסל */
 export async function GET(req: NextRequest) {
@@ -17,7 +16,7 @@ export async function GET(req: NextRequest) {
   const contact = (s: Student) => all.primaryContact(s.id);
   const assignments = (s: Student) => [
     ...all.lessons.filter((l) => l.student_id === s.id).map((l) =>
-      `${maps.instrument.get(l.instrument_id)?.name} · ${fullName(maps.teacher.get(l.teacher_id))} · ${DAYS[l.weekday]} ${hhmm(l.start_time)} (${STATUS_LABELS[l.status]})`),
+      `${maps.instrument.get(l.instrument_id)?.name} · ${fullName(maps.teacher.get(l.teacher_id))} · ${lessonWhen(l)} (${STATUS_LABELS[l.status]})`),
     ...all.enrollments.filter((e) => e.student_id === s.id).map((e) =>
       `${maps.choir.get(e.choir_id)?.name} (${STATUS_LABELS[e.status]})`),
   ].join('\n');
@@ -39,6 +38,9 @@ export async function GET(req: NextRequest) {
     { header: 'סוג מנוי', width: 14, value: (s) => s.health_plan },
     { header: 'יש הפניה', width: 10, value: (s) => yesNo(s.has_referral) },
     { header: 'עודכן בקופה', width: 11, value: (s) => yesNo(s.hmo_reported) },
+    { header: 'חתמו על חוזה', width: 11, value: (s) => yesNo(!!s.contract_signed) },
+    { header: 'פרטי אשראי', width: 11, value: (s) => yesNo(!!s.card_on_file) },
+    { header: 'מייל', width: 22, value: (s) => (s.no_email ? 'אין מייל' : s.email ?? '') },
     { header: 'איש קשר', width: 14, value: (s) => contact(s)?.name ?? '' },
     { header: 'טלפון', width: 14, value: (s) => contact(s)?.phone ?? '' },
     { header: 'העדפות שעה', width: 24, value: (s) => s.preferred_times },

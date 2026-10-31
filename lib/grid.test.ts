@@ -18,7 +18,7 @@ describe('teacherGrid', () => {
   it('a lesson takes its slot', () => {
     const g = teacherGrid(hours, [{ weekday: 0, start: toMin('16:45') }], []);
     expect(kinds(g)).toEqual(['free', 'covered', 'lesson', 'covered', 'free', 'covered']);
-    expect(g.cells[2][0]).toEqual({ kind: 'lesson', index: 0, span: 2 });
+    expect(g.cells[2][0]).toEqual({ kind: 'lesson', index: 0, span: 2, others: [] });
   });
 
   it('days with different start times keep their own sequence', () => {

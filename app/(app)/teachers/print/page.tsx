@@ -18,13 +18,17 @@ export default async function TeacherPrintPage({ searchParams }: { searchParams:
   const finalOnly = one(sp.final) === '1';
 
   const roomBranch = (roomId: number) => maps.room.get(roomId)?.branch_id;
-  const lessonsOf = (tid: number) => all.lessons
+  const lessonsOf = (tid: number) => all.timedLessons
     .filter((l) => l.teacher_id === tid && (!finalOnly || l.status === 'confirmed') && (!branchId || roomBranch(l.room_id) === branchId));
+  // לימוד בבית המורה: בלי סניף, אז מוצג רק כשלא מסננים לפי סניף
+  const homeOf = (tid: number) => (branchId ? [] : all.lessons
+    .filter((l) => l.at_home && l.teacher_id === tid && (!finalOnly || l.status === 'confirmed'))
+    .sort((a, b) => (a.home_slot ?? 0) - (b.home_slot ?? 0)));
   const choirsOf = (tid: number) => all.choirs
     .filter((c) => c.teacher_id === tid && (!branchId || roomBranch(c.room_id) === branchId));
 
   const teachers = all.teachers
-    .filter((t) => (teacherId ? t.id === teacherId : t.active && lessonsOf(t.id).length + choirsOf(t.id).length > 0))
+    .filter((t) => (teacherId ? t.id === teacherId : t.active && lessonsOf(t.id).length + homeOf(t.id).length + choirsOf(t.id).length > 0))
     .sort((a, b) => fullName(a).localeCompare(fullName(b), 'he'));
 
   const phones = (studentId: number) => all.contacts
@@ -67,15 +71,16 @@ export default async function TeacherPrintPage({ searchParams }: { searchParams:
       {teachers.map((t) => {
         const lessons = lessonsOf(t.id);
         const choirs = choirsOf(t.id);
+        const home = homeOf(t.id);
         const days = [...new Set([...lessons.map((l) => l.weekday), ...choirs.map((c) => c.weekday)])].sort();
         return (
           <section key={t.id} className="card print-sheet">
             <div className="print-head">
               <h2>מערכת שעות · {fullName(t)}</h2>
-              <span className="muted">{lessons.length} תלמידים{choirs.length > 0 && ` · ${choirs.length} מקהלות`} · הודפס {today}</span>
+              <span className="muted">{lessons.length + home.length} תלמידים{choirs.length > 0 && ` · ${choirs.length} מקהלות`} · הודפס {today}</span>
             </div>
 
-            {days.length === 0 && <Empty>אין שיבוצים</Empty>}
+            {days.length === 0 && home.length === 0 && <Empty>אין שיבוצים</Empty>}
             {days.map((d) => {
               const dayLessons = lessons.filter((l) => l.weekday === d).sort((a, b) => a.start_time.localeCompare(b.start_time));
               const dayChoirs = choirs.filter((c) => c.weekday === d);
@@ -129,6 +134,35 @@ export default async function TeacherPrintPage({ searchParams }: { searchParams:
                 </div>
               );
             })}
+            {home.length > 0 && (
+              <div className="print-day">
+                <h3>לימוד בבית המורה</h3>
+                <table className="print-table">
+                  <thead>
+                    <tr><th>מס׳</th><th>תלמיד/ה</th><th>גיל</th><th>כלי</th><th>טלפונים</th><th>סטטוס</th></tr>
+                  </thead>
+                  <tbody>
+                    {home.map((l) => {
+                      const s = maps.student.get(l.student_id);
+                      return (
+                        <tr key={l.id}>
+                          <td className="nowrap">{l.home_slot}</td>
+                          <td><strong>{fullName(s)}</strong></td>
+                          <td className="nowrap">{s ? ageLabel(s.birth_date, s.birth_date_approx) : ''}</td>
+                          <td>{maps.instrument.get(l.instrument_id)?.name}</td>
+                          <td>
+                            {phones(l.student_id).map((p) => (
+                              <div key={p.id} className="nowrap">{p.label && `${p.label}: `}<span dir="ltr">{p.phone}</span></div>
+                            ))}
+                          </td>
+                          <td>{l.status === 'confirmed' ? '' : STATUS_LABELS[l.status]}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
         );
       })}

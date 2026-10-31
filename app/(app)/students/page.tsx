@@ -6,9 +6,8 @@ import {
 import { loadAll } from '@/lib/data';
 import { createClient } from '@/lib/supabase/server';
 import { ageLabel } from '@/lib/age';
-import { hhmm } from '@/lib/time';
 import { filterStudents, queryString, studentFilters } from '@/lib/filters';
-import { fullName } from '@/lib/types';
+import { fullName, lessonWhen } from '@/lib/types';
 
 export default async function StudentsPage({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
@@ -91,12 +90,17 @@ export default async function StudentsPage({ searchParams }: { searchParams: SP 
                       {s.health_fund && HEALTH_FUND_LABELS[s.health_fund]}{s.health_plan && ` · ${s.health_plan}`}
                       {s.health_fund && s.health_fund !== 'private' && !s.has_referral && <span className="badge badge-muted">חסרה הפניה</span>}
                     </td>
-                    <td>{c ? <>{c.name} · <span dir="ltr">{c.phone}</span></> : ''}</td>
+                    <td>
+                      {c ? <>{c.name} · <span dir="ltr">{c.phone}</span></> : ''}
+                      {/* רק כשהשדה קיים (אחרי 0044) ולא סומן */}
+                      {s.status === 'active' && s.contract_signed === false && <span className="badge badge-muted">חסר חוזה</span>}
+                      {s.status === 'active' && s.card_on_file === false && <span className="badge badge-muted">אין אשראי</span>}
+                    </td>
                     <td>
                       {lessons.length + enr.length === 0 && <span className="badge badge-muted">ללא שיבוץ</span>}
                       {lessons.map((l) => (
                         <div key={l.id}>
-                          {maps.instrument.get(l.instrument_id)?.name} · {DAYS[l.weekday]} {hhmm(l.start_time)} <StatusBadge status={l.status} />
+                          {maps.instrument.get(l.instrument_id)?.name} · {lessonWhen(l)} <StatusBadge status={l.status} />
                         </div>
                       ))}
                       {enr.map((e) => (
