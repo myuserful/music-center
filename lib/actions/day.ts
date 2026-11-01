@@ -191,17 +191,28 @@ export async function deleteDayExtra(fd: FormData) {
 }
 
 /**
- * פתיחה חריגה של יום נעול, לתיקון טעות. המורים נשארים סגורים (אפשר לבטל סגירה של כל מורה בנפרד),
- * והיום לא ננעל שוב אוטומטית - רק ב"סגירת כל היום"
+ * פתיחת יום סגור: כל המורים של היום חוזרים להיות פתוחים לעריכה והחיובים של היום מוסרים (כמו ביטול סגירה לכל מורה).
+ * גם יום שנסגר סופית - והוא לא ייסגר שוב אוטומטית, רק ב"סגירת כל היום". השורות שנשמרו נשארות
  */
 export async function unlockDay(fd: FormData) {
   const date = str(fd, 'date');
   if (!validDate(date)) fail('/daily', 'תאריך לא תקין');
   const to = `/daily?date=${date}`;
   const db = await createClient();
-  const { error } = await db.from('day_locks').update({ unlocked_at: new Date().toISOString() }).eq('lesson_date', date);
-  if (error) fail(to, dbMessage(error));
-  done(to, 'היום נפתח לתיקון. אחרי התיקון צריך ללחוץ שוב על "סגירת כל היום"');
+  // קודם הנעילה (בלעדיה המסד לא מרשה לבטל סגירה של מורה). לפני 0052 אין נעילות
+  const unlock = await db.from('day_locks').update({ unlocked_at: new Date().toISOString() }).eq('lesson_date', date);
+  if (unlock.error && !['42P01', 'PGRST205'].includes(unlock.error.code)) fail(to, dbMessage(unlock.error));
+
+  const closures = await db.from('day_closures').delete().eq('lesson_date', date).select('teacher_id');
+  if (closures.error) fail(to, dbMessage(closures.error));
+  try {
+    for (const c of closures.data ?? []) await unbillDay(db, c.teacher_id as number, date);
+    // שיעורים בזוג: הספירה של "כל רביעי חינם" זזה, ומחייבים מחדש את הימים הסגורים שאחרי היום הזה
+    await billClosedDays(db, { from: date, to: date });
+  } catch (e) {
+    fail(to, `היום נפתח, אבל החיובים לא נמחקו: ${(e as Error).message}`);
+  }
+  done(to, `היום נפתח (${closures.data?.length ?? 0} מורים) והחיובים של היום הוסרו. אחרי העריכה סוגרים שוב`);
 }
 
 /** סגירת כל היום: כל המורים נסגרים, השיעורים מחויבים, והיום ננעל סופית */

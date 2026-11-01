@@ -87,7 +87,7 @@ export default async function DailyPage({ searchParams }: { searchParams: SP }) 
             הדפסת כל היום (PDF)
           </a>
         )}
-        {!locked && !day.missingLock && date <= today && (
+        {!locked && !day.missingLock && date <= today && teachers.length > 0 && (
           <form action={lockWholeDay} className="inline">
             <input type="hidden" name="date" value={date} />
             <ConfirmButton
@@ -99,6 +99,17 @@ export default async function DailyPage({ searchParams }: { searchParams: SP }) 
 שינויים שלא שמרת בכרטיסים לא ייכללו.`}
             >
               סגירת כל היום 🔒
+            </ConfirmButton>
+          </form>
+        )}
+        {!locked && closedCount > 0 && (
+          <form action={unlockDay} className="inline">
+            <input type="hidden" name="date" value={date} />
+            <ConfirmButton
+              className="btn btn-danger"
+              message={`לפתוח את ${dayLabel(date)}?\n\nכל ${closedCount} המורים שנסגרו יחזרו להיות פתוחים לעריכה, והחיובים של היום יוסרו. מה שנשמר נשאר. אחרי העריכה סוגרים שוב.`}
+            >
+              פתיחת היום 🔓
             </ConfirmButton>
           </form>
         )}
@@ -129,7 +140,7 @@ export default async function DailyPage({ searchParams }: { searchParams: SP }) 
       )}
       {day.lock?.unlocked_at && (
         <div className="flash flash-error" role="alert">
-          היום הזה נפתח לתיקון אחרי שנסגר סופית. הוא לא ייסגר שוב אוטומטית: אחרי התיקון צריך ללחוץ על &quot;סגירת כל היום&quot;.
+          היום הזה נפתח אחרי שנסגר סופית. הוא לא ייסגר שוב אוטומטית: אחרי התיקון צריך ללחוץ על &quot;סגירת כל היום&quot;.
         </div>
       )}
       {!locked && !day.missingLock && date <= today && (
@@ -195,7 +206,7 @@ function DaySummary({ lock, noTrack }: { lock: DayLock; noTrack: { id: number; n
   return (
     <section className="card day-summary">
       <h2>🔒 היום נסגר סופית {lock.auto ? '(אוטומטית)' : ''} · {when}</h2>
-      <p className="muted">אי אפשר יותר לשנות את היום הזה: לא להוסיף מורים או תלמידים, לא להעביר ולא לבטל סגירה.</p>
+      <p className="muted">היום הזה נעול: אי אפשר להוסיף מורים או תלמידים, להעביר או לשנות נוכחות. לתיקון אפשר לפתוח את היום (למטה).</p>
       <div className="grid grid-4 dash-tiles">
         {tiles.map((t) => (
           <div key={t.label} className={`stat ${t.tone}`}>
@@ -226,10 +237,10 @@ function DaySummary({ lock, noTrack }: { lock: DayLock; noTrack: { id: number; n
       <form action={unlockDay} className="form-foot no-print">
         <input type="hidden" name="date" value={lock.lesson_date} />
         <ConfirmButton
-          className="btn btn-xs btn-danger"
-          message={'לפתוח את היום הנעול לתיקון?\n\nזה רק לתיקון טעות. המורים נשארים סגורים (אפשר לבטל סגירה של מורה כדי לערוך), והיום לא ייסגר שוב אוטומטית: אחרי התיקון צריך ללחוץ שוב על "סגירת כל היום".'}
+          className="btn btn-danger"
+          message={'לפתוח את היום הנעול?\n\nכל המורים של היום יחזרו להיות פתוחים לעריכה, והחיובים של היום יוסרו. מה שנשמר נשאר.\nהיום לא ייסגר שוב אוטומטית: אחרי העריכה צריך ללחוץ שוב על "סגירת כל היום".'}
         >
-          פתיחה לתיקון (חריג)
+          פתיחת היום 🔓
         </ConfirmButton>
       </form>
     </section>
