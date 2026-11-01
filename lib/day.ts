@@ -1,6 +1,6 @@
-import { ATTENDANCES, type Attendance } from './constants';
+import { ATTENDANCES, DAYS, type Attendance } from './constants';
 import { hhmm } from './time';
-import { isTimed, type Contact, type DayLesson, type Lesson } from './types';
+import { isTimed, type Contact, type DayLesson, type DayStats, type Lesson, type TeacherExtra } from './types';
 
 /** שורה בסגירת יום (מה שנשמר במסד, בלי מזהה) */
 export type DayRow = {
@@ -12,6 +12,9 @@ export type DayRow = {
   teacher_paid: boolean | null;
   /** שיעור בזוג (מכל 4, הרביעי חינם) */
   pair: boolean;
+  /** העברה חד-פעמית: מאיזה יום ומאיזה/ו מורה השיעור הועבר ליום הזה */
+  moved_from: string | null;
+  moved_from_teacher: number | null;
 };
 
 /** "2026-10-20" -> 0..6 (ראשון = 0, כמו DAYS) */
@@ -55,7 +58,7 @@ export function scheduledRows(lessons: Lesson[], teacherId: number, date: string
     .map((l) => ({
       lesson_id: l.id, student_id: l.student_id, instrument_id: l.instrument_id,
       start_time: hhmm(l.start_time), room_id: l.room_id, attendance: 'present' as const, notes: '', substitute_id: null,
-      teacher_paid: null, pair: l.pair ?? false,
+      teacher_paid: null, pair: l.pair ?? false, moved_from: null, moved_from_teacher: null,
     }))
     .sort(byTime);
 }
@@ -86,6 +89,8 @@ export function dayRows(
       substitute_id: d.substitute_id ?? null,
       teacher_paid: d.teacher_paid ?? null,
       pair: d.pair ?? false,
+      moved_from: d.moved_from ?? null,
+      moved_from_teacher: d.moved_from_teacher ?? null,
     })).sort(byTime),
   };
 }
@@ -99,11 +104,14 @@ export function parseRows(json: string, teacherId: number): DayRow[] | null {
   const rows: DayRow[] = [];
   for (const r of raw as Record<string, unknown>[]) {
     const student = id(r.student_id);
-    const [lesson, instrument, room, sub] = [id(r.lesson_id), id(r.instrument_id), id(r.room_id), id(r.substitute_id)];
+    const [lesson, instrument, room, sub, movedTeacher] =
+      [id(r.lesson_id), id(r.instrument_id), id(r.room_id), id(r.substitute_id), id(r.moved_from_teacher)];
     const time = r.start_time ? String(r.start_time) : null;
+    const movedFrom = r.moved_from ? String(r.moved_from) : null;
     const attendance = ATTENDANCES.find((a) => a === r.attendance);
-    if (!student || [lesson, instrument, room, sub].some((v) => Number.isNaN(v)) || !attendance) return null;
+    if (!student || [lesson, instrument, room, sub, movedTeacher].some((v) => Number.isNaN(v)) || !attendance) return null;
     if (time && !/^\d{2}:\d{2}$/.test(time)) return null;
+    if (movedFrom && !validDate(movedFrom)) return null;
     rows.push({
       lesson_id: lesson, student_id: student, instrument_id: instrument, start_time: time, room_id: room,
       attendance, notes: String(r.notes ?? '').trim().slice(0, 500),
@@ -111,9 +119,79 @@ export function parseRows(json: string, teacherId: number): DayRow[] | null {
       substitute_id: sub === teacherId ? null : sub,
       teacher_paid: typeof r.teacher_paid === 'boolean' ? r.teacher_paid : null,
       pair: r.pair === true,
+      moved_from: movedFrom,
+      moved_from_teacher: movedFrom ? movedTeacher : null,
     });
   }
   return rows;
+}
+
+// ---- העברה חד-פעמית ----
+
+/** "יום שני 02/11" */
+export const dayLabel = (date: string) => `יום ${DAYS[weekdayOf(date)]} ${dmy(date).slice(0, 5)}`;
+
+/**
+ * העברה חד-פעמית של תלמיד/ה מיום (ומורה) אחד לאחר: השורה יוצאת מהיום המקורי ונכנסת ליום החדש,
+ * עם מאיפה היא הועברה. לא משנה את מערכת השעות הקבועה. מחזיר הודעת שגיאה, או את שני הימים החדשים
+ */
+export function moveRow(
+  { fromRows, toRows, studentId, fromDate, fromTeacher, toDate, toTeacher, toTime, toRoom }: {
+    fromRows: DayRow[]; toRows: DayRow[]; studentId: number; fromDate: string; fromTeacher: number;
+    toDate: string; toTeacher: number; toTime: string | null; toRoom: number | null;
+  },
+): { from: DayRow[]; to: DayRow[] } | string {
+  if (fromDate === toDate && fromTeacher === toTeacher) return 'זה אותו יום ואותו/ה מורה. לשינוי שעה אפשר לשנות את השעה בשורה ולשמור';
+  const row = fromRows.find((r) => r.student_id === studentId);
+  if (!row) return 'התלמיד/ה כבר לא ביום הזה';
+  if (toRows.some((r) => r.student_id === studentId)) return 'התלמיד/ה כבר רשום/ה ביום שאליו מעבירים';
+  // העברה של שיעור שכבר הועבר: זוכרים את היום המקורי
+  const origin = row.moved_from ? { date: row.moved_from, teacher: row.moved_from_teacher } : { date: fromDate, teacher: fromTeacher };
+  const back = origin.date === toDate && origin.teacher === toTeacher;
+  return {
+    from: fromRows.filter((r) => r !== row),
+    to: [...toRows, {
+      // ביום אחר אין את בן/בת הזוג ואת ממלא/ת המקום
+      ...row, start_time: toTime, room_id: toRoom, attendance: 'present' as const, teacher_paid: null, substitute_id: null, pair: false,
+      // חזרה ליום המקורי = כאילו לא הועבר
+      moved_from: back ? null : origin.date, moved_from_teacher: back ? null : origin.teacher,
+    }].sort(byTime),
+  };
+}
+
+// ---- סגירה סופית של היום ----
+
+/** התאריך היום בישראל (השרת ב-UTC) */
+export const israelToday = (now = new Date()) => now.toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
+
+/**
+ * ימים שעבר עליהם יום שלם מאז שנגמרו (24 שעות אחרי חצות של סוף היום) ועוד לא נסגרו סופית:
+ * נסגרים אוטומטית. from = מתי הסגירה האוטומטית התחילה
+ */
+export function overdueDates(candidates: string[], locked: Set<string>, from: string, today: string): string[] {
+  const last = addDays(today, -2);
+  return [...new Set(candidates)].filter((d) => d >= from && d <= last && !locked.has(d)).sort();
+}
+
+/** תמונת מצב של יום: כמה תלמידים, נוכחות, מורים, שעות למורים וסכומים */
+export function dayStats(
+  rows: DayLesson[], extras: Pick<TeacherExtra, 'minutes'>[], charges: { amount: number }[], unbilled: number, lessonMinutes: number,
+): DayStats {
+  const count = (a: Attendance) => rows.filter((r) => r.attendance === a).length;
+  const extraMinutes = extras.reduce((n, e) => n + Number(e.minutes ?? 0), 0);
+  return {
+    teachers: new Set(rows.map(taughtBy)).size,
+    students: new Set(rows.filter((r) => r.attendance === 'present').map((r) => r.student_id)).size,
+    lessons: rows.length,
+    present: count('present'), absent: count('absent'), excused: count('excused'), cancelled: count('cancelled'),
+    substitutes: rows.filter((r) => r.substitute_id).length,
+    added: rows.filter((r) => !r.lesson_id).length,
+    moved: rows.filter((r) => r.moved_from).length,
+    teacherMinutes: lessonCount(teacherPaidRows(rows)) * lessonMinutes + extraMinutes,
+    extraMinutes,
+    charged: Math.round(charges.reduce((n, c) => n + Number(c.amount), 0)),
+    unbilled,
+  };
 }
 
 // ---- תשלום למורה ----

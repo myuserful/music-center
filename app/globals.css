@@ -831,6 +831,20 @@ a.link-chip:hover { text-decoration: underline; }
 .account-cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; margin-top: 16px; }
 #account tr:target td, #account li:target { background: var(--yellow-soft); transition: background 0.4s; }
 .day-head .btn[aria-disabled] { opacity: 0.5; cursor: not-allowed; }
+.day-table .btn-ghost.on { background: var(--brand-soft); color: var(--brand-dark); }
+.day-table tr.day-move td { background: var(--brand-soft); }
+.day-move-fields { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin-top: 6px; }
+.day-move-fields label { display: flex; flex-direction: column; gap: 2px; font-size: 0.8rem; }
+.day-moved-out { margin-top: 10px; font-size: 0.85rem; }
+.day-moved-out ul { margin: 4px 0 0; padding-inline-start: 18px; }
+.day-extras { margin-top: 14px; border-top: 1px dashed var(--line); padding-top: 10px; font-size: 0.85rem; }
+.day-extras-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.day-extras-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.day-extras-add { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.day-extras-add input[name="reason"] { width: 180px; }
+.day-extras-add input[name="custom"] { width: 80px; }
+.day-summary h2 { margin-top: 0; }
+.day-summary .dash-tiles { margin: 12px 0 6px; }
 
 @media print {
   @page { size: A4; margin: 12mm; }

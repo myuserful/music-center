@@ -6,6 +6,7 @@ import {
   STUDENT_STATUS_LABELS, STUDENT_STATUSES, type Gender, type HealthFund,
 } from '@/lib/constants';
 import { loadAll } from '@/lib/data';
+import { autoLockOverdue } from '@/lib/dayLock';
 import { createClient } from '@/lib/supabase/server';
 import { toMin } from '@/lib/time';
 import { fullName, type Student } from '@/lib/types';
@@ -39,6 +40,8 @@ const hours = (minutes: number) => (minutes / 60).toLocaleString('he-IL', { maxi
 export default async function Dashboard({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
   const db = await createClient();
+  // ימים שלא נסגרו ביד נסגרים 24 שעות אחרי שנגמרו (לפני שמחשבים)
+  await autoLockOverdue(db);
   const all = await loadAll(db);
   const { maps } = all;
 

@@ -5,7 +5,7 @@ import { toMin } from './time';
 import type { DB } from './supabase/server';
 import { isTimed } from './types';
 import type {
-  BillingSettings, Branch, Charge, Choir, Contact, DayClosure, DayLesson, Enrollment, Instrument, Receipt, ReceiptCertificate, TeacherExtra, TeacherPayroll, Lesson, Payment, Room, Student,
+  BillingSettings, Branch, Charge, Choir, Contact, DayClosure, DayLesson, DayLock, Enrollment, Instrument, Receipt, ReceiptCertificate, TeacherExtra, TeacherPayroll, Lesson, Payment, Room, Student,
   Teacher, TeacherHours,
 } from './types';
 
@@ -163,11 +163,22 @@ export async function loadDay(db: DB, date: string) {
   const firstError = [lessons, closures].find((r) => r.error)?.error;
   // עד שמריצים את 0039: מציגים את מערכת השעות הקבועה, בלי אפשרות לשמור
   if (firstError?.code === '42P01' || firstError?.code === 'PGRST205') {
-    return { lessons: [] as DayLesson[], closures: [] as DayClosure[], missingTables: true, missingSubstitute: true };
+    return { lessons: [] as DayLesson[], closures: [] as DayClosure[], missingTables: true, missingSubstitute: true,
+      missingLock: true, lock: null as DayLock | null, extras: [] as TeacherExtra[], movedOut: [] as DayLesson[] };
   }
   if (firstError) throw new Error(firstError.message);
+  // נעילת היום, תוספות זמן למורים, ותלמידים שהועברו מהיום הזה ליום אחר (לפני 0052: אין)
+  const [lock, extras, movedOut] = await Promise.all([
+    db.from('day_locks').select('*').eq('lesson_date', date).maybeSingle(),
+    db.from('teacher_extras').select('*').eq('extra_date', date).not('minutes', 'is', null).order('id'),
+    db.from('day_lessons').select('*').eq('moved_from', date),
+  ]);
   return { lessons: lessons.data as DayLesson[], closures: closures.data as DayClosure[], missingTables: false,
     missingSubstitute: sub.error?.code === '42703' || sub.error?.code === 'PGRST204',
+    missingLock: !!lock.error || !!movedOut.error,
+    lock: (lock.data ?? null) as DayLock | null,
+    extras: (extras.data ?? []) as TeacherExtra[],
+    movedOut: (movedOut.data ?? []) as DayLesson[],
   };
 }
 

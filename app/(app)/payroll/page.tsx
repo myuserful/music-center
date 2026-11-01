@@ -8,6 +8,7 @@ import { LESSON_MINUTES, TX_METHOD_LABELS, TX_METHODS } from '@/lib/constants';
 import { addDays, dmy, hoursLabel, taughtBy } from '@/lib/day';
 import { loadAll, loadPayroll } from '@/lib/data';
 import { payrollRange, teacherPayroll } from '@/lib/payroll';
+import { autoLockOverdue } from '@/lib/dayLock';
 import { createClient } from '@/lib/supabase/server';
 import { fullName } from '@/lib/types';
 
@@ -20,6 +21,8 @@ export default async function PayrollPage({ searchParams }: { searchParams: SP }
   const range = payrollRange(month);
   const back = `/payroll?month=${month}`;
   const db = await createClient();
+  // ימים שלא נסגרו ביד נסגרים 24 שעות אחרי שנגמרו (לפני שמחשבים)
+  await autoLockOverdue(db);
   const [all, data] = await Promise.all([loadAll(db), loadPayroll(db, range)]);
   // שבוע עם פעילות לפי לוח מועדי הפעילות (ראשון עד שישי)
   const isActiveWeek = (sunday: string) => [0, 1, 2, 3, 4, 5].some((i) => isActivityDate(addDays(sunday, i)));

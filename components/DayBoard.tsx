@@ -1,15 +1,19 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { reopenDay, saveDay } from '@/lib/actions/day';
+import { addDayExtra, deleteDayExtra, moveStudent, reopenDay, saveDay } from '@/lib/actions/day';
 import { ConfirmButton } from './ConfirmButton';
 import { ATTENDANCE_LABELS, ATTENDANCES, STATUS_LABELS, type Status } from '@/lib/constants';
-import { teacherPaidByRule, type DayRow } from '@/lib/day';
+import { dayLabel, teacherPaidByRule, type DayRow } from '@/lib/day';
 import { fmt, TIME_OPTIONS, toMin } from '@/lib/time';
 
 export type DayTeacher = {
   id: number; name: string; rows: DayRow[]; saved: boolean; closedAt: string | null; scheduledCount: number;
   instrumentIds: number[]; roomId: number | null; firstTime: string | null;
+  /** תוספות זמן למורה ביום הזה (לשכר) */
+  extras: { id: number; minutes: number; reason: string }[];
+  /** תלמידים שהועברו מהיום הזה ליום אחר (חד-פעמי) */
+  movedOut: { studentId: number; date: string; label: string; teacherId: number; time: string | null; teacher: string | null }[];
 };
 export type DayStudent = {
   id: number; name: string; active: boolean; phone: string; requested: number | null;
@@ -20,9 +24,13 @@ type Props = {
   date: string; teachers: DayTeacher[]; students: DayStudent[]; instruments: Named[];
   /** כל המורים הפעילים, לבחירת ממלא/ת מקום */
   allTeachers: Named[];
+  /** היום נסגר סופית: רק צפייה */
+  locked: boolean;
+  /** אפשר להעביר תלמיד/ה ליום אחר (0052 הורצה) */
+  canMove: boolean;
 };
 
-export function DayBoard({ date, teachers, students, instruments, allTeachers }: Props) {
+export function DayBoard({ date, teachers, students, instruments, allTeachers, locked, canMove }: Props) {
   const studentMap = useMemo(() => new Map(students.map((s) => [s.id, s])), [students]);
   const instrumentName = useMemo(() => new Map(instruments.map((i) => [i.id, i.name])), [instruments]);
   const teacherName = useMemo(() => new Map(allTeachers.map((t) => [t.id, t.name])), [allTeachers]);
@@ -34,7 +42,7 @@ export function DayBoard({ date, teachers, students, instruments, allTeachers }:
           key={`${t.id}:${t.closedAt}:${JSON.stringify(t.rows)}`}
           date={date} teacher={t} students={students} studentMap={studentMap}
           instruments={instruments} instrumentName={instrumentName}
-          allTeachers={allTeachers} teacherName={teacherName}
+          allTeachers={allTeachers} teacherName={teacherName} locked={locked} canMove={canMove}
         />
       ))}
     </div>
@@ -47,14 +55,19 @@ const strip = (rows: Row[]): DayRow[] => rows.map(({ key: _, ...r }) => r);
 const fmtClosed = (iso: string) =>
   new Date(iso).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-function TeacherDay({ date, teacher: t, students, studentMap, instruments, instrumentName, allTeachers, teacherName }: {
+function TeacherDay({
+  date, teacher: t, students, studentMap, instruments, instrumentName, allTeachers, teacherName, locked, canMove,
+}: {
   date: string; teacher: DayTeacher; students: DayStudent[]; studentMap: Map<number, DayStudent>;
   instruments: Named[]; instrumentName: Map<number, string>; allTeachers: Named[]; teacherName: Map<number, string>;
+  locked: boolean; canMove: boolean;
 }) {
   const [rows, setRows] = useState<Row[]>(() => t.rows.map((r) => ({ ...r, key: nextKey++ })));
   const [query, setQuery] = useState('');
+  // השורה שפתוחה בה העברה חד-פעמית ליום אחר
+  const [moving, setMoving] = useState<number | null>(null);
   const dirty = JSON.stringify(strip(rows)) !== JSON.stringify(t.rows);
-  const closed = t.closedAt !== null;
+  const closed = t.closedAt !== null || locked;
 
   useEffect(() => {
     if (!dirty) return;
@@ -95,6 +108,7 @@ function TeacherDay({ date, teacher: t, students, studentMap, instruments, instr
       teacher_paid: null,
       // שיעור שנוסף ליום (השלמה וכו') לא נספר בסבב של שיעור בזוג
       pair: false,
+      moved_from: null, moved_from_teacher: null,
     }]);
     setQuery('');
   };
@@ -117,7 +131,12 @@ function TeacherDay({ date, teacher: t, students, studentMap, instruments, instr
         {/* בלשונית חדשה, כדי ששינויים שלא נשמרו ביום לא ילכו לאיבוד */}
         <a href={`/students/${r.student_id}`} target="_blank" rel="noreferrer" className="day-student"><strong>{s?.name}</strong></a>
         {s?.phone && <div className="muted nowrap" dir="ltr">{s.phone}</div>}
-        {!r.lesson_id && <span className="chip chip-plain">נוסף ליום הזה</span>}
+        {r.moved_from ? (
+          <span className="chip chip-sub" title="העברה חד-פעמית, מערכת השעות הקבועה לא השתנתה">
+            הועבר/ה מ{dayLabel(r.moved_from)}
+            {r.moved_from_teacher && r.moved_from_teacher !== t.id && ` (${teacherName.get(r.moved_from_teacher) ?? ''})`}
+          </span>
+        ) : !r.lesson_id && <span className="chip chip-plain">נוסף ליום הזה</span>}
         {r.pair && <span className="chip chip-plain" title="שיעור בזוג: מכל 4 שיעורים, הרביעי חינם">👥 בזוג</span>}
         {lesson && lesson.status !== 'confirmed' && <span className={`badge badge-${lesson.status}`}>{STATUS_LABELS[lesson.status]}</span>}
       </>
@@ -138,7 +157,8 @@ function TeacherDay({ date, teacher: t, students, studentMap, instruments, instr
           {mixedSubs && <div><span className="chip chip-sub">מילוי מקום בחלק מהשיעורים</span></div>}
         </div>
         <div className="actions">
-          {closed ? <span className="badge badge-confirmed">נסגר ✓ {fmtClosed(t.closedAt!)}</span>
+          {locked ? <span className="badge badge-confirmed">נסגר סופית 🔒</span>
+            : closed ? <span className="badge badge-confirmed">נסגר ✓ {fmtClosed(t.closedAt!)}</span>
             : t.saved ? <span className="badge badge-undecided">נשמר, עדיין פתוח</span>
             : <span className="badge badge-muted">לא נשמר</span>}
           {closed ? (
@@ -178,13 +198,15 @@ function TeacherDay({ date, teacher: t, students, studentMap, instruments, instr
               </tbody>
             </table>
           </div>
-          <form action={reopenDay} className="form-foot">
-            <input type="hidden" name="date" value={date} />
-            <input type="hidden" name="teacher_id" value={t.id} />
-            <ConfirmButton className="btn btn-xs btn-danger" message={`לבטל את סגירת היום של ${t.name}? השיעורים שנשמרו נשארים, והיום חוזר להיות פתוח לעריכה`}>
-              ביטול סגירת יום
-            </ConfirmButton>
-          </form>
+          {!locked && (
+            <form action={reopenDay} className="form-foot">
+              <input type="hidden" name="date" value={date} />
+              <input type="hidden" name="teacher_id" value={t.id} />
+              <ConfirmButton className="btn btn-xs btn-danger" message={`לבטל את סגירת היום של ${t.name}? השיעורים שנשמרו נשארים, והיום חוזר להיות פתוח לעריכה`}>
+                ביטול סגירת יום
+              </ConfirmButton>
+            </form>
+          )}
         </>
       ) : (
         <form action={saveDay}>
@@ -211,7 +233,7 @@ function TeacherDay({ date, teacher: t, students, studentMap, instruments, instr
               <thead><tr><th>שעה</th><th>תלמיד/ה</th><th>כלי</th><th>לימד/ה</th><th>נוכחות</th><th>הערה</th><th /></tr></thead>
               <tbody>
                 {rows.length === 0 && <tr><td colSpan={7} className="muted">אין שיעורים. אפשר להוסיף תלמיד/ה למטה</td></tr>}
-                {rows.map((r) => (
+                {rows.map((r) => [
                   <tr key={r.key} className={`att-${r.attendance}`}>
                     <td>
                       <select
@@ -265,7 +287,16 @@ function TeacherDay({ date, teacher: t, students, studentMap, instruments, instr
                         onChange={(e) => update(r.key, { notes: e.target.value })}
                       />
                     </td>
-                    <td>
+                    <td className="nowrap">
+                      {canMove && (
+                        <button
+                          type="button" className={`btn btn-xs btn-ghost${moving === r.key ? ' on' : ''}`}
+                          title="העברה חד-פעמית ליום אחר, לשעה אחרת או למורה אחר/ת" aria-expanded={moving === r.key}
+                          onClick={() => setMoving(moving === r.key ? null : r.key)}
+                        >
+                          ⇄
+                        </button>
+                      )}
                       <button
                         type="button" className="btn btn-xs btn-ghost" title="הסרה מהיום הזה בלבד"
                         onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))}
@@ -273,8 +304,37 @@ function TeacherDay({ date, teacher: t, students, studentMap, instruments, instr
                         ✕
                       </button>
                     </td>
-                  </tr>
-                ))}
+                  </tr>,
+                  moving === r.key && (
+                    <tr key={`move-${r.key}`} className="day-move">
+                      <td colSpan={7}>
+                        <strong>העברה חד-פעמית של {studentMap.get(r.student_id)?.name}</strong>
+                        <span className="muted"> (מערכת השעות הקבועה לא משתנה)</span>
+                        <div className="day-move-fields">
+                          <input type="hidden" name="move_student" value={r.student_id} />
+                          <label>ליום
+                            <input type="date" name="to_date" defaultValue={date} />
+                          </label>
+                          <label>בשעה
+                            <select name="to_time" defaultValue={r.start_time ?? ''}>
+                              <option value="">—</option>
+                              {(r.start_time && !TIME_OPTIONS.includes(r.start_time) ? [r.start_time, ...TIME_OPTIONS] : TIME_OPTIONS)
+                                .map((x) => <option key={x} value={x}>{x}</option>)}
+                            </select>
+                          </label>
+                          <label>אצל
+                            <select name="to_teacher" defaultValue={t.id}>
+                              {allTeachers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                            </select>
+                          </label>
+                          <button className="btn btn-xs btn-primary" formAction={moveStudent}>העברה</button>
+                          <button type="button" className="btn btn-xs btn-ghost" onClick={() => setMoving(null)}>ביטול</button>
+                        </div>
+                        {dirty && <p className="muted">השינויים שעשית בכרטיס הזה יישמרו יחד עם ההעברה</p>}
+                      </td>
+                    </tr>
+                  ),
+                ])}
               </tbody>
             </table>
           </div>
@@ -307,6 +367,67 @@ function TeacherDay({ date, teacher: t, students, studentMap, instruments, instr
           </div>
         </form>
       )}
+
+      {t.movedOut.length > 0 && (
+        <div className="day-moved-out">
+          <strong>הועברו מהיום הזה (חד-פעמי):</strong>
+          <ul>
+            {t.movedOut.map((m) => (
+              <li key={`${m.studentId}:${m.date}`}>
+                {studentMap.get(m.studentId)?.name} ←{' '}
+                <a href={`/daily?date=${m.date}#t${m.teacherId}`}>{m.label}{m.time && ` ${m.time}`}{m.teacher && ` אצל ${m.teacher}`}</a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <DayExtras date={date} teacher={t} locked={locked} />
     </section>
+  );
+}
+
+const QUICK_MINUTES = [10, 15, 30, 45, 60];
+
+/** תוספת זמן למורה כבר בסגירת היום (נכנסת לשכר של החודש) */
+function DayExtras({ date, teacher: t, locked }: { date: string; teacher: DayTeacher; locked: boolean }) {
+  if (locked && !t.extras.length) return null;
+  const total = t.extras.reduce((n, e) => n + e.minutes, 0);
+  return (
+    <div className="day-extras">
+      <div className="day-extras-head">
+        <strong>תוספת זמן למורה</strong>
+        {total > 0 && <span className="chip chip-sub">סה&quot;כ +{total} דק&apos;</span>}
+        {!locked && <span className="muted">נכנס לשכר. לשיעור שהתלמיד/ה לא הגיע/ה אליו אפשר גם לסמן &quot;משולם למורה&quot; בשורה</span>}
+      </div>
+      {t.extras.length > 0 && (
+        <ul className="day-extras-list">
+          {t.extras.map((e) => (
+            <li key={e.id}>
+              <form action={deleteDayExtra} className="inline">
+                <input type="hidden" name="date" value={date} />
+                <input type="hidden" name="teacher_id" value={t.id} />
+                <input type="hidden" name="id" value={e.id} />
+                +{e.minutes} דק&apos;{e.reason && <span className="muted"> · {e.reason}</span>}
+                {!locked && <button className="btn btn-xs btn-ghost" title="מחיקת התוספת">✕</button>}
+              </form>
+            </li>
+          ))}
+        </ul>
+      )}
+      {!locked && (
+        <form action={addDayExtra} className="day-extras-add">
+          <input type="hidden" name="date" value={date} />
+          <input type="hidden" name="teacher_id" value={t.id} />
+          <input name="reason" placeholder="סיבה (לא חובה)" aria-label="סיבה" maxLength={200} />
+          <input type="number" name="custom" min={1} max={600} placeholder="דקות" aria-label="כמה דקות" />
+          <button className="btn btn-xs">הוספה</button>
+          <span className="muted">או:</span>
+          {QUICK_MINUTES.map((m) => (
+            <button key={m} className="btn btn-xs" name="minutes" value={m}>+{m === 60 ? 'שעה' : `${m} דק'`}</button>
+          ))}
+        </form>
+      )}
+    </div>
   );
 }

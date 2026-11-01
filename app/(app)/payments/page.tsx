@@ -7,6 +7,7 @@ import { account, effectiveAmount, maccabiPart, monthLabel, shekel } from '@/lib
 import { BILLABLE, DAYS, HEALTH_FUND_LABELS, PAYMENT_METHOD_LABELS, PAYMENT_TRACK_LABELS } from '@/lib/constants';
 import { addDays, dmy, weekdayOf } from '@/lib/day';
 import { loadAll, loadBilling, loadReceipts } from '@/lib/data';
+import { autoLockOverdue } from '@/lib/dayLock';
 import { createClient } from '@/lib/supabase/server';
 import { sumitConfigured } from '@/lib/sumit';
 import { fullName, type Charge, type DayClosure, type DayLesson, type Payment } from '@/lib/types';
@@ -14,6 +15,8 @@ import { fullName, type Charge, type DayClosure, type DayLesson, type Payment } 
 export default async function PaymentsPage({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
   const db = await createClient();
+  // ימים שלא נסגרו ביד נסגרים 24 שעות אחרי שנגמרו (לפני שמחשבים)
+  await autoLockOverdue(db);
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
   const monthParam = one(sp.month);
   const month = /^\d{4}-\d{2}$/.test(monthParam) ? monthParam : today.slice(0, 7);

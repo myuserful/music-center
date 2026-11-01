@@ -122,8 +122,24 @@ export type DayLesson = {
   teacher_paid: boolean | null;
   /** שיעור בזוג (מכל 4, הרביעי חינם) */
   pair: boolean;
+  /** העברה חד-פעמית: מאיזה יום ומאיזה/ו מורה השיעור הועבר ליום הזה (לפני 0052: חסר) */
+  moved_from?: string | null;
+  moved_from_teacher?: number | null;
 };
 export type DayClosure = { teacher_id: number; lesson_date: string; closed_at: string };
+/** יום שנסגר סופית לכל המורים */
+export type DayLock = {
+  lesson_date: string; locked_at: string; auto: boolean; stats: Partial<DayStats>;
+  /** נפתח בחריגה לתיקון (null = נעול) */
+  unlocked_at: string | null;
+};
+/** תמונת מצב של יום שנסגר */
+export type DayStats = {
+  teachers: number; students: number; lessons: number;
+  present: number; absent: number; excused: number; cancelled: number;
+  substitutes: number; added: number; moved: number;
+  teacherMinutes: number; extraMinutes: number; charged: number; unbilled: number;
+};
 
 type Named = { first_name: string; last_name: string };
 export const fullName = (p: Named | null | undefined) => (p ? `${p.first_name} ${p.last_name}`.trim() : '');
