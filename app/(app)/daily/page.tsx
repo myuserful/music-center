@@ -66,6 +66,13 @@ export default async function DailyPage({ searchParams }: { searchParams: SP }) 
   }));
 
   const closedCount = teachers.filter((t) => t.closedAt).length;
+  // תלמידים בלי מסלול תשלום ביום: אי אפשר לסגור עד שמעדכנים (ביום נעול - לא חויבו)
+  const trackOf = (id: number) => maps.student.get(id)?.payment_track;
+  const noTrack = (locked
+    ? unknownTrackStudents(day.lessons, trackOf).map((id) => ({ id, teacher: day.lessons.find((r) => r.student_id === id)?.teacher_id }))
+    : teachers.flatMap((t) => unknownTrackStudents(t.rows, trackOf).map((id) => ({ id, teacher: t.id }))))
+    .filter((x, i, xs) => xs.findIndex((y) => y.id === x.id) === i)
+    .map((x) => ({ id: x.id, name: fullName(maps.student.get(x.id)), teacher: fullName(maps.teacher.get(x.teacher ?? 0)) }));
   const others = locked ? [] : all.teachers.filter((t) => t.active && !teacherIds.has(t.id))
     .sort((a, b) => fullName(a).localeCompare(fullName(b), 'he'));
 
@@ -132,11 +139,13 @@ export default async function DailyPage({ searchParams }: { searchParams: SP }) 
         </div>
       )}
       {locked && (
-        <DaySummary
-          lock={locked}
-          noTrack={unknownTrackStudents(day.lessons, (id) => maps.student.get(id)?.payment_track)
-            .map((id) => ({ id, name: fullName(maps.student.get(id)) }))}
-        />
+        <DaySummary lock={locked} noTrack={noTrack} />
+      )}
+      {!locked && !day.missingTables && noTrack.length > 0 && (
+        <TrackForm date={date} students={noTrack} button="עדכון מסלול תשלום">
+          <strong>ביום הזה יש {noTrack.length} תלמידים בלי מסלול תשלום, ולכן אי אפשר לסגור את המורים שלהם ואת כל היום.</strong>
+          <p className="muted">אפשר לעדכן כאן לכולם בבת אחת (ברירת המחדל: פרטי). שינויים שלא שמרת בכרטיסים לא נשמרים בעדכון.</p>
+        </TrackForm>
       )}
       {day.lock?.unlocked_at && (
         <div className="flash flash-error" role="alert">
@@ -179,8 +188,34 @@ export default async function DailyPage({ searchParams }: { searchParams: SP }) 
   );
 }
 
+type NoTrack = { id: number; name: string; teacher: string };
+
+/** עדכון מסלול תשלום (ברירת המחדל: פרטי) לתלמידים בלי מסלול, עם קישור לכרטיס של כל תלמיד/ה */
+function TrackForm({ date, students, button, children }: {
+  date: string; students: NoTrack[]; button: string; children: React.ReactNode;
+}) {
+  return (
+    <form action={setDayTracks} className="day-tracks no-print" id="tracks">
+      <input type="hidden" name="date" value={date} />
+      {children}
+      <ul>
+        {students.map((s) => (
+          <li key={s.id}>
+            <a href={`/students/${s.id}`} target="_blank" rel="noreferrer">{s.name}</a>
+            {s.teacher && <span className="muted">({s.teacher})</span>}
+            <select name={`track_${s.id}`} defaultValue="private" aria-label={`מסלול תשלום של ${s.name}`}>
+              {PAYMENT_TRACKS.filter((x) => x !== 'unknown').map((x) => <option key={x} value={x}>{PAYMENT_TRACK_LABELS[x]}</option>)}
+            </select>
+          </li>
+        ))}
+      </ul>
+      <button className="btn btn-xs btn-primary">{button}</button>
+    </form>
+  );
+}
+
 /** מה היה ביום שנסגר סופית (תמונת המצב מרגע הסגירה) */
-function DaySummary({ lock, noTrack }: { lock: DayLock; noTrack: { id: number; name: string }[] }) {
+function DaySummary({ lock, noTrack }: { lock: DayLock; noTrack: NoTrack[] }) {
   const s = lock.stats;
   const n = (v: number | undefined) => v ?? 0;
   const when = new Date(lock.locked_at).toLocaleString('he-IL', {
@@ -217,22 +252,10 @@ function DaySummary({ lock, noTrack }: { lock: DayLock; noTrack: { id: number; n
       </div>
       {extras.length > 0 && <p className="muted">{extras.join(' · ')}</p>}
       {noTrack.length > 0 && (
-        <form action={setDayTracks} className="day-tracks">
-          <input type="hidden" name="date" value={lock.lesson_date} />
+        <TrackForm date={lock.lesson_date} students={noTrack} button="עדכון מסלול וחיוב">
           <strong>ביום הזה יש תלמידים בלי מסלול תשלום, והשיעורים שלהם לא חויבו.</strong>
           <p className="muted">אפשר לעדכן כאן מסלול ולחייב (ברירת המחדל: פרטי), או לפתוח את היום לתיקון בכפתור למטה.</p>
-          <ul>
-            {noTrack.map((s) => (
-              <li key={s.id}>
-                <Link href={`/students/${s.id}`}>{s.name}</Link>
-                <select name={`track_${s.id}`} defaultValue="private" aria-label="מסלול תשלום">
-                  {PAYMENT_TRACKS.filter((x) => x !== 'unknown').map((x) => <option key={x} value={x}>{PAYMENT_TRACK_LABELS[x]}</option>)}
-                </select>
-              </li>
-            ))}
-          </ul>
-          <button className="btn btn-xs btn-primary">עדכון מסלול וחיוב</button>
-        </form>
+        </TrackForm>
       )}
       <form action={unlockDay} className="form-foot no-print">
         <input type="hidden" name="date" value={lock.lesson_date} />

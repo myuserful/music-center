@@ -227,7 +227,9 @@ export async function lockWholeDay(fd: FormData) {
   try {
     stats = await lockDays(db, [date], false, { requireTracks: true });
   } catch (e) {
-    fail(to, e instanceof MissingTracks ? `אי אפשר לסגור את היום: אין מסלול תשלום ל${e.names.join(', ')}. צריך לעדכן מסלול בכרטיס של המורה` : `הסגירה לא הושלמה: ${(e as Error).message}`);
+    fail(to, e instanceof MissingTracks
+      ? `אי אפשר לסגור את היום: ל-${e.names.length} תלמידים אין מסלול תשלום. אפשר לעדכן להם מסלול בתיבה שמתחת`
+      : `הסגירה לא הושלמה: ${(e as Error).message}`);
   }
   const s = stats!.get(date)!;
   done(to, `היום נסגר סופית: ${s.students} תלמידים הגיעו, ${s.absent + s.excused + s.cancelled} לא הגיעו או בוטלו, `
