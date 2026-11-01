@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-  addDays, attendedDates, dayRows, dayStats, hoursLabel, mobilePhone, moveRow, overdueDates, parseRows, scheduledRows, shortName, teacherDays, weekdayOf,
+  addDays, attendedDates, dayRows, dayStats, hoursLabel, mobilePhone, moveRow, overdueDates, parseRows, scheduledRows, shortName, teacherDays,
+  unknownTrackStudents, weekdayOf,
   type DayRow,
 } from './day';
+import type { PaymentTrack } from './constants';
 import type { Contact, DayLesson, Lesson } from './types';
 
 const lesson = (id: number, weekday: number | null, start: string | null, extra: Partial<Lesson> = {}): Lesson => ({
@@ -134,6 +136,16 @@ describe('moveRow', () => {
 });
 
 describe('closing the whole day', () => {
+  it('finds billable students without a payment track', () => {
+    const rows = [
+      { student_id: 1, attendance: 'present' as const }, { student_id: 2, attendance: 'excused' as const },
+      { student_id: 3, attendance: 'absent' as const }, { student_id: 4, attendance: 'present' as const },
+    ];
+    const tracks: Record<number, PaymentTrack> = { 1: 'unknown', 2: 'unknown', 3: 'unknown', 4: 'private' };
+    // ביטול מראש לא מחויב, ולכן לא חוסם
+    expect(unknownTrackStudents(rows, (id) => tracks[id])).toEqual([1, 3]);
+  });
+
   it('auto-closes days 24 hours after they ended, from the start date, not twice', () => {
     const candidates = ['2026-10-28', '2026-11-01', '2026-11-02', '2026-11-03', '2026-11-02'];
     // ביום רביעי 04/11: יום שני נגמר לפני יותר מ-24 שעות, יום שלישי עוד לא

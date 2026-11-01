@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { addDayExtra, deleteDayExtra, moveStudent, reopenDay, saveDay } from '@/lib/actions/day';
+import { addDayExtra, deleteDayExtra, moveStudent, reopenDay, saveDay, setDayTracks } from '@/lib/actions/day';
 import { ConfirmButton } from './ConfirmButton';
-import { ATTENDANCE_LABELS, ATTENDANCES, STATUS_LABELS, type Status } from '@/lib/constants';
-import { dayLabel, teacherPaidByRule, type DayRow } from '@/lib/day';
+import {
+  ATTENDANCE_LABELS, ATTENDANCES, PAYMENT_TRACK_LABELS, PAYMENT_TRACKS, STATUS_LABELS, type PaymentTrack, type Status,
+} from '@/lib/constants';
+import { dayLabel, teacherPaidByRule, unknownTrackStudents, type DayRow } from '@/lib/day';
 import { fmt, TIME_OPTIONS, toMin } from '@/lib/time';
 
 export type DayTeacher = {
@@ -16,7 +18,7 @@ export type DayTeacher = {
   movedOut: { studentId: number; date: string; label: string; teacherId: number; time: string | null; teacher: string | null }[];
 };
 export type DayStudent = {
-  id: number; name: string; active: boolean; phone: string; requested: number | null;
+  id: number; name: string; active: boolean; phone: string; requested: number | null; track: PaymentTrack;
   lessons: { id: number; teacher_id: number; instrument_id: number; status: Status }[];
 };
 type Named = { id: number; name: string };
@@ -119,6 +121,9 @@ function TeacherDay({
   const mixedSubs = subs.length > 1;
   const substitutes = allTeachers.filter((x) => x.id !== t.id);
   const subName = (id: number | null) => (id ? teacherName.get(id) ?? '' : '');
+
+  // תלמידים בלי מסלול תשלום: אי אפשר לסגור את היום עד שמעדכנים
+  const noTrack = closed ? [] : unknownTrackStudents(rows, (id) => studentMap.get(id)?.track);
 
   const counts = ATTENDANCES.map((a) => ({ a, n: rows.filter((r) => r.attendance === a).length })).filter((x) => x.n);
   const printHref = `/daily/print?date=${date}&teacher=${t.id}`;
@@ -360,10 +365,17 @@ function TeacherDay({
             {q.length >= 2 && matches.length === 0 && <p className="muted">לא נמצאו תלמידים</p>}
           </div>
 
+          {noTrack.length > 0 && <TrackFix ids={noTrack} studentMap={studentMap} />}
+
           <div className="form-foot">
             {dirty && <span className="muted">יש שינויים שלא נשמרו</span>}
             <button className="btn" name="close" value="0">שמירה</button>
-            <button className="btn btn-primary" name="close" value="1">סגירת יום ✓</button>
+            <button
+              className="btn btn-primary" name="close" value="1" disabled={noTrack.length > 0}
+              title={noTrack.length ? 'קודם צריך לעדכן מסלול תשלום לתלמידים שמסומנים למעלה' : undefined}
+            >
+              סגירת יום ✓
+            </button>
           </div>
         </form>
       )}
@@ -384,6 +396,27 @@ function TeacherDay({
 
       <DayExtras date={date} teacher={t} locked={locked} />
     </section>
+  );
+}
+
+/** בחירת מסלול תשלום (ברירת המחדל: פרטי) לתלמידים שאין להם, מתוך הכרטיס. בתוך הטופס של היום */
+function TrackFix({ ids, studentMap }: { ids: number[]; studentMap: Map<number, DayStudent> }) {
+  return (
+    <div className="day-tracks" role="alert">
+      <strong>אין מסלול תשלום, ולכן אי אפשר לסגור את היום:</strong>
+      <ul>
+        {ids.map((id) => (
+          <li key={id}>
+            <a href={`/students/${id}`} target="_blank" rel="noreferrer">{studentMap.get(id)?.name}</a>
+            <select name={`track_${id}`} defaultValue="private" aria-label="מסלול תשלום">
+              {PAYMENT_TRACKS.filter((x) => x !== 'unknown').map((x) => <option key={x} value={x}>{PAYMENT_TRACK_LABELS[x]}</option>)}
+            </select>
+          </li>
+        ))}
+      </ul>
+      <button className="btn btn-xs btn-primary" formAction={setDayTracks}>עדכון מסלול תשלום</button>
+      <span className="muted"> השינויים בשורות לא הולכים לאיבוד</span>
+    </div>
   );
 }
 

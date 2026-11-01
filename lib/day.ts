@@ -1,4 +1,4 @@
-import { ATTENDANCES, DAYS, type Attendance } from './constants';
+import { ATTENDANCES, BILLABLE, DAYS, type Attendance, type PaymentTrack } from './constants';
 import { hhmm } from './time';
 import { isTimed, type Contact, type DayLesson, type DayStats, type Lesson, type TeacherExtra } from './types';
 
@@ -157,6 +157,17 @@ export function moveRow(
       moved_from: back ? null : origin.date, moved_from_teacher: back ? null : origin.teacher,
     }].sort(byTime),
   };
+}
+
+/**
+ * תלמידים בלי מסלול תשלום, בשיעורים שמחייבים (הגיע/ה, לא הגיע/ה בלי הודעה):
+ * אי אפשר לחייב אותם, ולכן אי אפשר לסגור את היום עד שמעדכנים להם מסלול
+ */
+export function unknownTrackStudents(
+  rows: Pick<DayRow, 'student_id' | 'attendance'>[], track: (studentId: number) => PaymentTrack | undefined,
+): number[] {
+  return [...new Set(rows.filter((r) => BILLABLE.includes(r.attendance) && (track(r.student_id) ?? 'unknown') === 'unknown')
+    .map((r) => r.student_id))];
 }
 
 // ---- סגירה סופית של היום ----

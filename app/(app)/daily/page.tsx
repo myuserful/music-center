@@ -2,10 +2,11 @@ import Link from 'next/link';
 import { DayBoard, type DayTeacher, type DayStudent } from '@/components/DayBoard';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { Empty, Flash, one, PageHead, type SP } from '@/components/ui';
-import { lockWholeDay, unlockDay } from '@/lib/actions/day';
-import { DAYS } from '@/lib/constants';
+import { lockWholeDay, setDayTracks, unlockDay } from '@/lib/actions/day';
+import { DAYS, PAYMENT_TRACK_LABELS, PAYMENT_TRACKS } from '@/lib/constants';
 import {
-  addDays, dayLabel, dayRows, dayTeacherIds, dmy, hoursLabel, israelToday, mobilePhone, scheduledRows, validDate, weekdayOf,
+  addDays, dayLabel, dayRows, dayTeacherIds, dmy, hoursLabel, israelToday, mobilePhone, scheduledRows, unknownTrackStudents,
+  validDate, weekdayOf,
 } from '@/lib/day';
 import { autoLockOverdue } from '@/lib/dayLock';
 import { loadAll, loadDay } from '@/lib/data';
@@ -61,6 +62,7 @@ export default async function DailyPage({ searchParams }: { searchParams: SP }) 
     lessons: all.lessons.filter((l) => l.student_id === s.id)
       .map((l) => ({ id: l.id, teacher_id: l.teacher_id, instrument_id: l.instrument_id, status: l.status })),
     requested: s.requested_instrument_id,
+    track: s.payment_track,
   }));
 
   const closedCount = teachers.filter((t) => t.closedAt).length;
@@ -118,7 +120,13 @@ export default async function DailyPage({ searchParams }: { searchParams: SP }) 
           כדי לסגור את כל היום, להעביר תלמידים ליום אחר ולסגור ימים אוטומטית צריך להריץ את 0052_day_lock.sql ב-Supabase.
         </div>
       )}
-      {locked && <DaySummary lock={locked} />}
+      {locked && (
+        <DaySummary
+          lock={locked}
+          noTrack={unknownTrackStudents(day.lessons, (id) => maps.student.get(id)?.payment_track)
+            .map((id) => ({ id, name: fullName(maps.student.get(id)) }))}
+        />
+      )}
       {day.lock?.unlocked_at && (
         <div className="flash flash-error" role="alert">
           היום הזה נפתח לתיקון אחרי שנסגר סופית. הוא לא ייסגר שוב אוטומטית: אחרי התיקון צריך ללחוץ על &quot;סגירת כל היום&quot;.
@@ -161,7 +169,7 @@ export default async function DailyPage({ searchParams }: { searchParams: SP }) 
 }
 
 /** מה היה ביום שנסגר סופית (תמונת המצב מרגע הסגירה) */
-function DaySummary({ lock }: { lock: DayLock }) {
+function DaySummary({ lock, noTrack }: { lock: DayLock; noTrack: { id: number; name: string }[] }) {
   const s = lock.stats;
   const n = (v: number | undefined) => v ?? 0;
   const when = new Date(lock.locked_at).toLocaleString('he-IL', {
@@ -197,6 +205,24 @@ function DaySummary({ lock }: { lock: DayLock }) {
         ))}
       </div>
       {extras.length > 0 && <p className="muted">{extras.join(' · ')}</p>}
+      {noTrack.length > 0 && (
+        <form action={setDayTracks} className="day-tracks">
+          <input type="hidden" name="date" value={lock.lesson_date} />
+          <strong>ביום הזה יש תלמידים בלי מסלול תשלום, והשיעורים שלהם לא חויבו.</strong>
+          <p className="muted">אפשר לעדכן כאן מסלול ולחייב (ברירת המחדל: פרטי), או לפתוח את היום לתיקון בכפתור למטה.</p>
+          <ul>
+            {noTrack.map((s) => (
+              <li key={s.id}>
+                <Link href={`/students/${s.id}`}>{s.name}</Link>
+                <select name={`track_${s.id}`} defaultValue="private" aria-label="מסלול תשלום">
+                  {PAYMENT_TRACKS.filter((x) => x !== 'unknown').map((x) => <option key={x} value={x}>{PAYMENT_TRACK_LABELS[x]}</option>)}
+                </select>
+              </li>
+            ))}
+          </ul>
+          <button className="btn btn-xs btn-primary">עדכון מסלול וחיוב</button>
+        </form>
+      )}
       <form action={unlockDay} className="form-foot no-print">
         <input type="hidden" name="date" value={lock.lesson_date} />
         <ConfirmButton

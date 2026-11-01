@@ -1,16 +1,56 @@
 'use server';
 
 import { billClosedDays, unbillDay } from '../charging';
-import { dayLabel, dayRows, hoursLabel, israelToday, moveRow, parseRows, validDate, weekdayOf } from '../day';
-import { isLocked, lockDays, LOCK_MISSING } from '../dayLock';
+import { PAYMENT_TRACKS, type PaymentTrack } from '../constants';
+import {
+  dayLabel, dayRows, hoursLabel, israelToday, moveRow, parseRows, unknownTrackStudents, validDate, weekdayOf, type DayRow,
+} from '../day';
+import { isLocked, lockDays, LOCK_MISSING, MissingTracks, rebillDay } from '../dayLock';
 import { loadAll } from '../data';
 import { createClient } from '../supabase/server';
 import { fullName, type DayClosure, type DayLesson } from '../types';
-import { dbMessage, done, fail, num, str } from './util';
+import { dbMessage, done, fail, num, oneOf, str } from './util';
 
 const LOCKED = 'היום הזה נסגר סופית ואי אפשר לשנות אותו';
 
 const back = (date: string, teacherId: number) => `/daily?date=${date}#t${teacherId}`;
+
+/** השמות של תלמידים בשורות שאין להם מסלול תשלום (בשיעורים שמחייבים) */
+async function missingTracks(db: Awaited<ReturnType<typeof createClient>>, rows: DayRow[]): Promise<string[]> {
+  const ids = [...new Set(rows.map((r) => r.student_id))];
+  if (!ids.length) return [];
+  const { data, error } = await db.from('students').select('id, first_name, last_name, payment_track').in('id', ids);
+  if (error) throw new Error(error.message);
+  const byId = new Map((data ?? []).map((s) => [s.id as number, s]));
+  return unknownTrackStudents(rows, (id) => byId.get(id)?.payment_track as PaymentTrack | undefined)
+    .map((id) => fullName(byId.get(id) as { first_name: string; last_name: string }));
+}
+
+/**
+ * עדכון מסלול תשלום לתלמידים מתוך סגירת היום (track_<id> = המסלול). ביום שכבר נסגר: השיעורים מחויבים מחדש
+ * לפי המסלול החדש, וגם תמונת המצב של יום נעול מתעדכנת
+ */
+export async function setDayTracks(fd: FormData) {
+  const date = str(fd, 'date');
+  if (!validDate(date)) fail('/daily', 'תאריך לא תקין');
+  const teacherId = num(fd, 'teacher_id');
+  const to = teacherId ? back(date, teacherId) : `/daily?date=${date}`;
+  const updates = [...fd.keys()].filter((k) => /^track_\d+$/.test(k))
+    .map((k) => ({ id: Number(k.slice(6)), track: oneOf(str(fd, k), PAYMENT_TRACKS.filter((t) => t !== 'unknown')) }));
+  if (!updates.length || updates.some((u) => !u.track)) fail(to, 'יש לבחור מסלול תשלום');
+  const db = await createClient();
+  for (const u of updates) {
+    const { error } = await db.from('students').update({ payment_track: u.track }).eq('id', u.id);
+    if (error) fail(to, dbMessage(error));
+  }
+  let unbilled: number;
+  try {
+    unbilled = await rebillDay(db, date);
+  } catch (e) {
+    fail(to, `המסלול עודכן, אבל החיובים של היום לא חושבו מחדש: ${(e as Error).message}`);
+  }
+  done(to, `מסלול התשלום עודכן ל-${updates.length} תלמידים${unbilled! ? ` (עדיין ${unbilled!} שיעורים לא חויבו)` : ''}`);
+}
 
 /** שמירת היום של מורה (רק ליום הזה, לא משנה את מערכת השעות). close=1: גם סגירת היום */
 export async function saveDay(fd: FormData) {
@@ -28,8 +68,11 @@ export async function saveDay(fd: FormData) {
     const { error: e } = await db.from('day_lessons').select('substitute_id').limit(1);
     if (e) fail(to, 'כדי לשמור מילוי מקום צריך להריץ את 0040_substitute_teacher.sql ב-Supabase');
   }
-  const { error } = await db.rpc('save_day', { p_teacher: teacherId, p_date: date, p_rows: rows, p_close: close });
+  // תלמידים בלי מסלול תשלום: שומרים, אבל לא סוגרים (אי אפשר לחייב אותם)
+  const missing = close ? await missingTracks(db, rows!) : [];
+  const { error } = await db.rpc('save_day', { p_teacher: teacherId, p_date: date, p_rows: rows, p_close: close && !missing.length });
   if (error) fail(to, error.code === 'PGRST202' ? 'צריך להריץ את 0039_day_lessons.sql ב-Supabase' : dbMessage(error));
+  if (missing.length) fail(to, `נשמר, אבל לא נסגר: אין מסלול תשלום ל${missing.join(', ')}. צריך לעדכן מסלול בכרטיס ואז לסגור`);
   if (!close) done(to, 'נשמר (היום עדיין פתוח)');
 
   // סגירת יום: כל שיעור שהתקיים יורד מהיתרה של התלמיד/ה
@@ -171,9 +214,9 @@ export async function lockWholeDay(fd: FormData) {
   if (await isLocked(db, date)) fail(to, 'היום הזה כבר נסגר סופית');
   let stats: Awaited<ReturnType<typeof lockDays>>;
   try {
-    stats = await lockDays(db, [date], false);
+    stats = await lockDays(db, [date], false, { requireTracks: true });
   } catch (e) {
-    fail(to, `הסגירה לא הושלמה: ${(e as Error).message}`);
+    fail(to, e instanceof MissingTracks ? `אי אפשר לסגור את היום: אין מסלול תשלום ל${e.names.join(', ')}. צריך לעדכן מסלול בכרטיס של המורה` : `הסגירה לא הושלמה: ${(e as Error).message}`);
   }
   const s = stats!.get(date)!;
   done(to, `היום נסגר סופית: ${s.students} תלמידים הגיעו, ${s.absent + s.excused + s.cancelled} לא הגיעו או בוטלו, `

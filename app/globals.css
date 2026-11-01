@@ -843,6 +843,9 @@ a.link-chip:hover { text-decoration: underline; }
 .day-extras-add { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
 .day-extras-add input[name="reason"] { width: 180px; }
 .day-extras-add input[name="custom"] { width: 80px; }
+.day-tracks { margin-top: 12px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--pending-bg); font-size: 0.85rem; }
+.day-tracks ul { list-style: none; margin: 6px 0 8px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.day-tracks li { display: flex; align-items: center; gap: 6px; }
 .day-summary h2 { margin-top: 0; }
 .day-summary .dash-tiles { margin: 12px 0 6px; }
 
