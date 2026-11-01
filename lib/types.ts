@@ -29,7 +29,9 @@ export type TeacherHours = {
 };
 export type Student = {
   id: number; first_name: string; last_name: string; school: string; birth_date: string | null; birth_date_approx: boolean;
-  branch_id: number | null; requested_instrument_id: number | null; notes: string; status: StudentStatus; waiting_reason: string;
+  branch_id: number | null; requested_instrument_id: number | null;
+  /** כלי נוסף (למשל גם מקהלה) */
+  second_instrument_id: number | null; notes: string; status: StudentStatus; waiting_reason: string;
   gender: Gender | null; health_fund: HealthFund | null; health_plan: string; id_number: string; three_digits: string;
   has_referral: boolean; hmo_reported: boolean; preferred_times: string; language: string;
   /** חתמו על חוזה / נלקחו פרטי אשראי */
@@ -143,3 +145,6 @@ export type DayStats = {
 
 type Named = { first_name: string; last_name: string };
 export const fullName = (p: Named | null | undefined) => (p ? `${p.first_name} ${p.last_name}`.trim() : '');
+/** הכלים המבוקשים של התלמיד/ה (עד שניים), בלי כפילויות */
+export const requestedInstrumentIds = (s: Pick<Student, 'requested_instrument_id' | 'second_instrument_id'>) =>
+  [...new Set([s.requested_instrument_id, s.second_instrument_id].filter((i): i is number => !!i))];

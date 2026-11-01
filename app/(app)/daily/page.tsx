@@ -11,7 +11,7 @@ import {
 import { autoLockOverdue } from '@/lib/dayLock';
 import { loadAll, loadDay } from '@/lib/data';
 import { createClient } from '@/lib/supabase/server';
-import { fullName, type DayLock } from '@/lib/types';
+import { fullName, requestedInstrumentIds, type DayLock } from '@/lib/types';
 
 /** סגירת יום: כל המורים של היום והשיעורים שלהם. מה שמשנים כאן חל רק על היום הזה */
 export default async function DailyPage({ searchParams }: { searchParams: SP }) {
@@ -61,7 +61,7 @@ export default async function DailyPage({ searchParams }: { searchParams: SP }) 
     id: s.id, name: fullName(s), active: s.status === 'active', phone: mobilePhone(contactsOf.get(s.id) ?? []),
     lessons: all.lessons.filter((l) => l.student_id === s.id)
       .map((l) => ({ id: l.id, teacher_id: l.teacher_id, instrument_id: l.instrument_id, status: l.status })),
-    requested: s.requested_instrument_id,
+    requested: requestedInstrumentIds(s),
     track: s.payment_track,
   }));
 

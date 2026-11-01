@@ -231,6 +231,7 @@ export async function saveStudent(fd: FormData) {
     birth_date_approx: !!str(fd, 'birth_date') && fd.get('birth_date_approx') === 'on',
     branch_id: num(fd, 'branch_id'),
     requested_instrument_id: num(fd, 'requested_instrument_id'),
+    second_instrument_id: num(fd, 'second_instrument_id'),
     notes: str(fd, 'notes'),
     status: oneOf(str(fd, 'status'), STUDENT_STATUSES) ?? 'active',
     gender: oneOf(str(fd, 'gender'), Object.keys(GENDER_LABELS) as Gender[]),

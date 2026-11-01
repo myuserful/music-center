@@ -18,7 +18,7 @@ export type DayTeacher = {
   movedOut: { studentId: number; date: string; label: string; teacherId: number; time: string | null; teacher: string | null }[];
 };
 export type DayStudent = {
-  id: number; name: string; active: boolean; phone: string; requested: number | null; track: PaymentTrack;
+  id: number; name: string; active: boolean; phone: string; requested: number[]; track: PaymentTrack;
   lessons: { id: number; teacher_id: number; instrument_id: number; status: Status }[];
 };
 type Named = { id: number; name: string };
@@ -98,7 +98,7 @@ function TeacherDay({
   const add = (s: DayStudent) => {
     // שיעור קיים של התלמיד/ה אצל המורה הזה (למשל שיעור השלמה) - כדי שהחיוב יקושר אליו
     const lesson = s.lessons.find((l) => l.teacher_id === t.id);
-    const known = [...s.lessons.map((l) => l.instrument_id), ...(s.requested ? [s.requested] : [])];
+    const known = [...s.lessons.map((l) => l.instrument_id), ...s.requested];
     const instrument = lesson?.instrument_id ?? known.find((i) => t.instrumentIds.includes(i)) ?? t.instrumentIds[0] ?? known[0] ?? null;
     const times = rows.map((r) => r.start_time).filter(Boolean).map((x) => toMin(x!));
     const start = times.length ? fmt(Math.max(...times) + 30) : t.firstTime;

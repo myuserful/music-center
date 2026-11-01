@@ -47,7 +47,7 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
   const s: Student | undefined = isNew
     ? {
       id: 0, first_name: '', last_name: '', school: '', birth_date: null, birth_date_approx: false, branch_id: null,
-      requested_instrument_id: null, notes: '', status: 'active', waiting_reason: '', gender: null, health_fund: null, health_plan: '',
+      requested_instrument_id: null, second_instrument_id: null, notes: '', status: 'active', waiting_reason: '', gender: null, health_fund: null, health_plan: '',
       id_number: '', three_digits: '', has_referral: false, hmo_reported: false, preferred_times: '', language: DEFAULT_LANGUAGE,
       contract_signed: false, card_on_file: false, email: '', no_email: false, family_id: null,
       payment_track: 'unknown', standing_order: false, needs_review: false,
@@ -124,6 +124,13 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
             כלי מבוקש
             <select name="requested_instrument_id" defaultValue={s.requested_instrument_id ?? ''}>
               <option value="">לא נבחר</option>
+              {all.instruments.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+            </select>
+          </label>
+          <label>
+            כלי נוסף
+            <select name="second_instrument_id" defaultValue={s.second_instrument_id ?? ''}>
+              <option value="">אין</option>
               {all.instruments.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
             </select>
           </label>

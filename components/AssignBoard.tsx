@@ -35,13 +35,14 @@ export type BoardTeacher = {
 
 export type BoardStudent = {
   id: number; name: string; age: string; status: string; undecided: boolean;
-  instrumentId: number | null; instrument: string; branchId: number | null; branch: string; language: string;
+  /** הכלים המבוקשים (עד שניים); instrument - השמות שלהם לתצוגה */
+  instrumentIds: number[]; instrument: string; branchId: number | null; branch: string; language: string;
   gender: 'boy' | 'girl' | null;
   preferred: string; notes: string; lessons: number; unassigned: boolean;
 };
 
 type Drop = {
-  student: Pick<BoardStudent, 'id' | 'name' | 'instrumentId'>; teacher: BoardTeacher;
+  student: Pick<BoardStudent, 'id' | 'name' | 'instrumentIds'>; teacher: BoardTeacher;
   weekday: number; start: number; homeSlot?: number; // homeSlot: לימוד בבית המורה (במקום יום ושעה)
   lessonId?: number; // הזזת שיעור קיים (במקום שיבוץ חדש)
 };
@@ -97,7 +98,7 @@ export function AssignBoard({
     const uniq = <T,>(pairs: [T, string][]) => [...new Map(pairs).entries()].sort((a, b) => a[1].localeCompare(b[1], 'he'));
     return {
       branches: uniq(students.filter((s) => s.branchId).map((s) => [s.branchId!, s.branch])),
-      instruments: uniq(students.filter((s) => s.instrumentId).map((s) => [s.instrumentId!, s.instrument])),
+      instruments: uniq(students.flatMap((s) => s.instrumentIds.map((id, k) => [id, s.instrument.split(' · ')[k] ?? ''] as [number, string]))),
       languages: [...new Set(students.map((s) => s.language).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'he')),
     };
   }, [students]);
@@ -107,7 +108,7 @@ export function AssignBoard({
     (!onlyUnassigned || s.unassigned) &&
     (!fBranch || String(s.branchId) === fBranch) &&
     (!fGender || s.gender === fGender) &&
-    (!fInstrument || String(s.instrumentId) === fInstrument) &&
+    (!fInstrument || s.instrumentIds.some((i) => String(i) === fInstrument)) &&
     (!fLanguage || s.language === fLanguage) &&
     (!query || [s.name, s.instrument, s.branch, s.notes, s.preferred].some((v) => v.includes(query))),
   );
@@ -179,14 +180,14 @@ export function AssignBoard({
     });
   }
 
-  /** בחירת הכלי: הכלי המבוקש אם המורה מלמד/ת אותו, או הכלי היחיד שלו/ה; אחרת שואלים */
+  /** בחירת הכלי: כלי מבוקש שהמורה מלמד/ת, או הכלי היחיד שלו/ה; אחרת שואלים */
   function assign(d: Drop) {
     const opts = d.teacher.instruments;
     if (opts.length === 0) {
       setToast({ ok: false, text: `ל${d.teacher.name} לא הוגדרו כלי נגינה.` });
       return;
     }
-    const requested = opts.find((i) => i.id === d.student.instrumentId);
+    const requested = opts.find((i) => d.student.instrumentIds.includes(i.id));
     if (requested) return save(d, requested.id);
     if (opts.length === 1) return save(d, opts[0].id);
     setChoose(d);
@@ -204,7 +205,7 @@ export function AssignBoard({
         if (kind === 'l' && moving?.id === Number(id)) {
           setMoving(null);
           assign({
-            student: { id: moving.studentId, name: moving.student, instrumentId: moving.instrumentId },
+            student: { id: moving.studentId, name: moving.student, instrumentIds: [moving.instrumentId] },
             teacher: t, ...at, lessonId: moving.id,
           });
           return;
@@ -385,7 +386,7 @@ export function AssignBoard({
                   >
                     🕒 שעות עבודה
                   </button>
-                  {active && active.instrumentId && t.instruments.length > 0 && !t.instruments.some((i) => i.id === active.instrumentId) && (
+                  {active && active.instrumentIds.length > 0 && t.instruments.length > 0 && !t.instruments.some((i) => active.instrumentIds.includes(i.id)) && (
                     <span className="badge badge-pending">לא מלמד/ת {active.instrument}</span>
                   )}
                   {active && active.language && t.languages.length > 0 && !t.languages.includes(active.language) && (

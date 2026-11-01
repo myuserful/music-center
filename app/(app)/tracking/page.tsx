@@ -7,7 +7,7 @@ import { DAYS, STATUS_LABELS, STATUSES, type Status } from '@/lib/constants';
 import { loadAll } from '@/lib/data';
 import { createClient } from '@/lib/supabase/server';
 import { hhmm } from '@/lib/time';
-import { fullName, lessonWhen } from '@/lib/types';
+import { fullName, lessonWhen, requestedInstrumentIds } from '@/lib/types';
 
 type Tab = Status | 'none';
 
@@ -60,7 +60,7 @@ export default async function TrackingPage({ searchParams }: { searchParams: SP 
                   <tr key={s.id}>
                     <td><Link href={`/students/${s.id}`}>{fullName(s)}</Link></td>
                     <td>{s.branch_id ? maps.branch.get(s.branch_id)?.name : ''}</td>
-                    <td>{s.requested_instrument_id ? maps.instrument.get(s.requested_instrument_id)?.name : ''}</td>
+                    <td>{requestedInstrumentIds(s).map((i) => maps.instrument.get(i)?.name).filter(Boolean).join(' · ')}</td>
                     <td>{phone(s.id)}</td>
                     <td><Link className="btn btn-xs" href={`/lessons/new?student=${s.id}&after=${encodeURIComponent(back)}`}>שיבוץ שיעור</Link></td>
                   </tr>

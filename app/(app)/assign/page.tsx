@@ -5,7 +5,7 @@ import { CHOIR_INSTRUMENT, STUDENT_STATUS_LABELS } from '@/lib/constants';
 import { loadAll } from '@/lib/data';
 import { createClient } from '@/lib/supabase/server';
 import { toMin } from '@/lib/time';
-import { fullName, isTimed, type Lesson } from '@/lib/types';
+import { fullName, isTimed, requestedInstrumentIds, type Lesson } from '@/lib/types';
 
 export default async function AssignPage({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
@@ -58,8 +58,8 @@ export default async function AssignPage({ searchParams }: { searchParams: SP })
     age: ageLabel(s.birth_date, s.birth_date_approx),
     status: STUDENT_STATUS_LABELS[s.status],
     undecided: s.status === 'undecided',
-    instrumentId: s.requested_instrument_id,
-    instrument: s.requested_instrument_id ? maps.instrument.get(s.requested_instrument_id)?.name ?? '' : '',
+    instrumentIds: requestedInstrumentIds(s),
+    instrument: requestedInstrumentIds(s).map((i) => maps.instrument.get(i)?.name ?? '').filter(Boolean).join(' · '),
     branchId: s.branch_id,
     branch: s.branch_id ? maps.branch.get(s.branch_id)?.name ?? '' : '',
     gender: s.gender,

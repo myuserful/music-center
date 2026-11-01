@@ -5,7 +5,7 @@ import { loadAll } from '@/lib/data';
 import { xlsxResponse, yesNo } from '@/lib/export';
 import { filterStudents, studentFilters } from '@/lib/filters';
 import { createClient } from '@/lib/supabase/server';
-import { fullName, lessonWhen, type Student } from '@/lib/types';
+import { fullName, lessonWhen, requestedInstrumentIds, type Student } from '@/lib/types';
 
 /** הורדת רשימת התלמידים (לפי הסינון הנוכחי) לאקסל */
 export async function GET(req: NextRequest) {
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     { header: 'ת"ז', width: 13, value: (s) => s.id_number },
     { header: 'מקום לימודים', value: (s) => s.school },
     { header: 'סניף', width: 14, value: (s) => (s.branch_id ? maps.branch.get(s.branch_id)?.name ?? '' : '') },
-    { header: 'כלי מבוקש', width: 12, value: (s) => (s.requested_instrument_id ? maps.instrument.get(s.requested_instrument_id)?.name ?? '' : '') },
+    { header: 'כלי מבוקש', width: 12, value: (s) => requestedInstrumentIds(s).map((i) => maps.instrument.get(i)?.name ?? '').filter(Boolean).join(', ') },
     { header: 'שפה', width: 10, value: (s) => s.language },
     { header: 'קופת חולים', width: 12, value: (s) => (s.health_fund ? HEALTH_FUND_LABELS[s.health_fund] : '') },
     { header: 'סוג מנוי', width: 14, value: (s) => s.health_plan },

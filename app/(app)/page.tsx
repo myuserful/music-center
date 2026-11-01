@@ -9,7 +9,7 @@ import { loadAll } from '@/lib/data';
 import { autoLockOverdue } from '@/lib/dayLock';
 import { createClient } from '@/lib/supabase/server';
 import { toMin } from '@/lib/time';
-import { fullName, type Student } from '@/lib/types';
+import { fullName, requestedInstrumentIds, type Student } from '@/lib/types';
 
 type Bar = { label: string; value: number; href?: string; note?: string };
 
@@ -65,7 +65,7 @@ export default async function Dashboard({ searchParams }: { searchParams: SP }) 
     .map((i) => {
       const its = fLessons.filter((l) => l.instrument_id === i.id);
       const students = new Set(its.map((l) => l.student_id));
-      const requested = fStudents.filter((s) => s.requested_instrument_id === i.id);
+      const requested = fStudents.filter((s) => requestedInstrumentIds(s).includes(i.id));
       return {
         instrument: i,
         requested: requested.length,
