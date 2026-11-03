@@ -4,6 +4,7 @@ import { CertificateList } from '@/components/CertificateList';
 import { BirthDateFields } from '@/components/BirthDateFields';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { HealthFundFields } from '@/components/HealthFundFields';
+import { InquiryButton } from '@/components/InquiryButton';
 import { StudentHistory } from '@/components/LessonHistory';
 import { ReceiptButton } from '@/components/ReceiptButton';
 import { StudentAccount } from '@/components/StudentAccount';
@@ -51,7 +52,6 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
       id_number: '', three_digits: '', has_referral: false, hmo_reported: false, preferred_times: '', language: DEFAULT_LANGUAGE,
       contract_signed: false, card_on_file: false, email: '', no_email: false, family_id: null,
       payment_track: 'unknown', standing_order: false, needs_review: false,
-      call_state: 'to_call', call_attempts: 0, last_call_at: null,
     }
     : maps.student.get(Number(id));
   if (!s) notFound();
@@ -75,6 +75,7 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
     <>
       <BackLink href="/students">כל התלמידים</BackLink>
       <PageHead title={isNew ? 'תלמיד/ה חדש/ה' : fullName(s) || '(ללא שם)'} sub={isNew ? undefined : STUDENT_STATUS_LABELS[s.status]}>
+        {!isNew && <InquiryButton studentId={s.id} name={fullName(s)} />}
         {!isNew && (
           <ReceiptButton
             studentId={s.id} days={receiptDays} gender={s.gender}

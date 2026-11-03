@@ -58,17 +58,21 @@ export const STATUS_LABELS: Record<Status, string> = {
   confirmed: 'סופי',
 };
 
-// ---- טלפונים להורים ----
-export type CallState = 'to_call' | 'no_answer';
-/** עמודות לוח הטלפונים: שתי הראשונות = מצב השיחה, השתיים האחרונות = סטטוס השיבוץ אחרי שענו */
-export type CallColumn = CallState | 'undecided' | 'confirmed';
-export const CALL_COLUMNS: CallColumn[] = ['to_call', 'no_answer', 'undecided', 'confirmed'];
-export const CALL_COLUMN_LABELS: Record<CallColumn, string> = {
+// ---- טלפונים לבירורים ----
+/** עמודות לוח הבירורים */
+export type InquiryStatus = 'to_call' | 'no_answer' | 'undecided' | 'done';
+export const INQUIRY_STATUSES: InquiryStatus[] = ['to_call', 'no_answer', 'undecided', 'done'];
+export const INQUIRY_STATUS_LABELS: Record<InquiryStatus, string> = {
   to_call: 'צריך להתקשר',
   no_answer: 'לא ענו',
   undecided: 'ענו - מתלבטים',
-  confirmed: 'אושר',
+  done: 'טופל',
 };
+
+export type Urgency = 'low' | 'normal' | 'high';
+/** מהדחוף ביותר */
+export const URGENCIES: Urgency[] = ['high', 'normal', 'low'];
+export const URGENCY_LABELS: Record<Urgency, string> = { high: 'דחוף', normal: 'רגיל', low: 'לא דחוף' };
 
 // ---- משימות ----
 export type TaskStatus = 'todo' | 'doing' | 'done';

@@ -624,17 +624,23 @@ tr.inactive td { opacity: 0.5; }
 .kanban-call-to_call { border-top-color: var(--blue); }
 .kanban-call-no_answer { border-top-color: var(--coral); }
 .kanban-call-undecided { border-top-color: var(--pending); }
-.kanban-call-confirmed { border-top-color: var(--confirmed); }
+.kanban-call-done { border-top-color: var(--confirmed); }
 .kanban-col.over { background: var(--brand-soft); }
 .call-search { max-width: 280px; }
 .call-toolbar { justify-content: flex-start; gap: 8px; }
 .call-toolbar select { width: auto; }
 .call-toolbar .flash { margin-inline-start: auto; }
-.call-items { list-style: none; margin: 6px 0 0; padding: 0; font-size: 0.82rem; color: var(--ink); }
-.call-items li { display: flex; gap: 6px; align-items: baseline; }
-.call-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--pending); }
-.call-dot.dot-undecided { background: var(--undecided); }
-.call-dot.dot-confirmed { background: var(--confirmed); }
+.inquiry-reasons { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; font-size: 0.86rem; }
+.inquiry-reasons li { display: flex; gap: 6px; align-items: baseline; }
+.inquiry-reason { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.inquiry-urgency-tag { flex: none; padding: 0 6px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; }
+.urgency-high { background: var(--coral-soft); color: #b8432f; }
+.urgency-normal { background: var(--blue-soft); color: var(--blue); }
+.urgency-low { background: #eef0f5; color: var(--muted); }
+.inquiry-urgency { display: flex; flex-wrap: wrap; gap: 14px; margin: 12px 0 0; }
+.inquiry-checks { list-style: none; margin: 6px 0 0; padding: 0; font-size: 0.8rem; }
+.inquiry-checks .ok { color: var(--confirmed); }
+.inquiry-checks .no { color: var(--danger); font-weight: 600; }
 .call-phone { margin: 6px 0 0; font-size: 0.84rem; }
 .call-card .task-due { display: block; margin-top: 4px; }
 .kanban-details { grid-template-columns: repeat(3, minmax(0, 1fr)); }

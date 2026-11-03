@@ -1,29 +1,34 @@
 import Link from 'next/link';
-import { CallBoard, type CallCard } from '@/components/CallBoard';
 import { DetailsBoard, type DetailsCard } from '@/components/DetailsBoard';
+import { InquiryBoard, type InquiryCard } from '@/components/InquiryBoard';
 import { one, PageHead, type SP } from '@/components/ui';
 import type { FollowupState } from '@/lib/actions/calls';
 import type { FamilyInfoMember } from '@/components/FamilyInfo';
-import { DAYS, HEALTH_FUND_LABELS, STATUS_LABELS, type CallColumn } from '@/lib/constants';
+import { DAYS, HEALTH_FUND_LABELS, STATUS_LABELS, URGENCIES, type InquiryStatus, type Urgency } from '@/lib/constants';
 import { loadAll } from '@/lib/data';
-import { DETAILS_TOPIC, MISSING_LABELS, missingDetails } from '@/lib/missingDetails';
+import { inquiryChecklist } from '@/lib/inquiries';
+import { DETAILS_TOPIC, missingDetails } from '@/lib/missingDetails';
 import { familyKey, normalizePhone } from '@/lib/siblings';
 import { createClient } from '@/lib/supabase/server';
 import { hhmm } from '@/lib/time';
 import { fullName, lessonWhen, type Student } from '@/lib/types';
 
 type Followup = { student_id: number; state: FollowupState; attempts: number; last_call_at: string | null; note: string };
+type Inquiry = {
+  id: number; student_id: number; reason: string; urgency: Urgency; status: InquiryStatus; attempts: number; last_call_at: string | null;
+};
 
 export default async function CallsPage({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
-  const tab = one(sp.tab) === 'details' ? 'details' : 'placement';
+  const tab = one(sp.tab) === 'details' ? 'details' : 'inquiries';
   const db = await createClient();
-  const [all, followupsRes] = await Promise.all([
+  const [all, followupsRes, inquiriesRes] = await Promise.all([
     loadAll(db),
     db.from('call_followups').select('student_id,state,attempts,last_call_at,note').eq('topic', DETAILS_TOPIC),
+    db.from('inquiries').select('id,student_id,reason,urgency,status,attempts,last_call_at').order('created_at'),
   ]);
   const { maps } = all;
-  const migrated = all.students.length === 0 || 'call_state' in all.students[0];
+  const inquiries = (inquiriesRes.data ?? []) as Inquiry[];
   const followups = new Map(((followupsRes.data ?? []) as Followup[]).map((f) => [f.student_id, f]));
 
   // פרטים חסרים: רק תלמידים פעילים
@@ -57,11 +62,6 @@ export default async function CallsPage({ searchParams }: { searchParams: SP }) 
     return names.length ? `משפחת ${names.join(' / ')}` : members.map((m) => m.first_name).join(', ');
   };
   const byName = (a: Student, b: Student) => a.first_name.localeCompare(b.first_name, 'he');
-  /** "נועה: חסר חוזה, חסר אשראי" לכל אח/ות במשפחה שחסר לו/ה משהו */
-  const missingText = (members: Student[], many: boolean) => members.filter((m) => missingOf.has(m.id)).map((m) => {
-    const list = missingOf.get(m.id)!.map((k) => MISSING_LABELS[k]).join(', ');
-    return many ? `${m.first_name}: חסר ${list}` : `חסר ${list}`;
-  });
 
   /** ימי השיעורים והמקהלות של כל המשפחה (לסינון לפי יום: מספיק שאחד האחים לומד באותו יום) */
   const daysOf = (members: Student[]) => {
@@ -89,65 +89,45 @@ export default async function CallsPage({ searchParams }: { searchParams: SP }) 
     ],
   }));
 
-  // אישור שיבוץ: אחים באותה עמודה = כרטיס אחד
-  type Entry = { s: Student; column: CallColumn; items: CallCard['items'] };
-  const entries: Entry[] = [];
-  for (const s of all.students) {
-    const lessons = all.lessons.filter((l) => l.student_id === s.id);
-    const enrollments = all.enrollments.filter((e) => e.student_id === s.id);
-    const statuses = [...lessons, ...enrollments].map((x) => x.status);
-    if (statuses.length === 0) continue;
-
-    // יש שיבוץ שממתין לאישור -> צריך להתקשר / לא ענו. אחרת לפי הסטטוס הנמוך ביותר
-    const column: CallColumn =
-      statuses.includes('pending') ? (s.call_state ?? 'to_call') :
-      statuses.includes('undecided') ? 'undecided' : 'confirmed';
-    entries.push({
-      s, column,
-      items: [
-        ...lessons.map((l) => ({
-          key: `l${l.id}`, status: l.status, weekday: l.weekday ?? -1,
-          instrument: maps.instrument.get(l.instrument_id)?.name ?? '',
-          text: `${maps.instrument.get(l.instrument_id)?.name ?? ''} · ${fullName(maps.teacher.get(l.teacher_id))} · ${lessonWhen(l)}`,
-        })),
-        ...enrollments.map((e) => {
-          const c = maps.choir.get(e.choir_id);
-          return {
-            key: `e${e.id}`, status: e.status, weekday: c?.weekday ?? -1, instrument: 'מקהלה',
-            text: c ? `מקהלה: ${c.name} · ${DAYS[c.weekday]} ${hhmm(c.start_time)}` : 'מקהלה',
-          };
-        }),
-      ],
-    });
+  // בירורים: אחים באותה עמודה = כרטיס אחד
+  const inquiryGroups = new Map<string, { row: Inquiry; s: Student }[]>();
+  for (const row of inquiries) {
+    const s = maps.student.get(row.student_id);
+    if (!s) continue;
+    const k = `${familyKey(s)}|${row.status}`;
+    if (!inquiryGroups.has(k)) inquiryGroups.set(k, []);
+    inquiryGroups.get(k)!.push({ row, s });
   }
-  const placementGroups = new Map<string, Entry[]>();
-  for (const e of entries) {
-    const k = `${familyKey(e.s)}|${e.column}`;
-    if (!placementGroups.has(k)) placementGroups.set(k, []);
-    placementGroups.get(k)!.push(e);
-  }
-  const cards: CallCard[] = [...placementGroups].map(([key, group]) => {
-    group.sort((a, b) => byName(a.s, b.s));
-    const members = group.map((e) => e.s);
-    const many = members.length > 1;
+  const cards: InquiryCard[] = [...inquiryGroups].map(([key, group]) => {
+    const members = [...new Map(group.map((g) => [g.s.id, g.s])).values()].sort(byName);
+    const ids = new Set(members.map((m) => m.id));
     const fam = familyOf(members[0]);
-    const column = group[0].column;
-    const lastCalls = members.map((m) => m.last_call_at).filter((t): t is string => !!t).sort();
+    const rows = group.map((g) => g.row);
+    const lastCalls = rows.map((r) => r.last_call_at).filter((t): t is string => !!t).sort();
     return {
       key,
-      members: members.map((m) => ({ id: m.id, firstName: m.first_name })),
-      name: titleOf(members),
+      ids: rows.map((r) => r.id),
+      title: titleOf(members),
       lastName: members[0].last_name,
       firstName: members[0].first_name,
-      column,
-      attempts: Math.max(...members.map((m) => m.call_attempts ?? 0)),
+      status: rows[0].status,
+      // הדחוף ביותר בכרטיס קובע את המקום בעמודה
+      urgency: URGENCIES.find((u) => rows.some((r) => r.urgency === u)) ?? 'normal',
+      attempts: Math.max(...rows.map((r) => r.attempts)),
       lastCall: lastCalls.at(-1) ?? null,
-      items: group.flatMap((e) => e.items.map((i) => (many ? { ...i, text: `${e.s.first_name}: ${i.text}` } : i))),
+      entries: group.map(({ row, s }) => ({ id: row.id, firstName: s.first_name, reason: row.reason, urgency: row.urgency })),
+      members: members.map((m) => ({ id: m.id, firstName: m.first_name, checklist: inquiryChecklist(m) })),
       contacts: contactsOf(fam.map((m) => m.id)),
+      items: [
+        ...all.lessons.filter((l) => ids.has(l.student_id)).map((l) => ({
+          instrument: maps.instrument.get(l.instrument_id)?.name ?? '', weekday: l.weekday ?? -1,
+        })),
+        ...all.enrollments.filter((e) => ids.has(e.student_id)).map((e) => ({
+          instrument: 'מקהלה', weekday: maps.choir.get(e.choir_id)?.weekday ?? -1,
+        })),
+      ],
       familyDays: daysOf(fam),
       info: infoOf(fam),
-      // גם מה שחסר לאחים שלא בכרטיס הזה
-      alsoAbout: column === 'confirmed' ? [] : missingText(fam, fam.length > 1),
     };
   });
 
@@ -165,6 +145,8 @@ export default async function CallsPage({ searchParams }: { searchParams: SP }) 
     const fs = members.map((m) => followups.get(m.id)).filter((f): f is Followup => !!f)
       .sort((a, b) => (b.last_call_at ?? '').localeCompare(a.last_call_at ?? ''));
     const pending = fam.filter((m) => pendingPlacement.has(m.id));
+    const famIds = new Set(fam.map((m) => m.id));
+    const openInquiries = inquiries.filter((i) => i.status !== 'done' && famIds.has(i.student_id));
     return {
       key, title: titleOf(members), lastName: members[0].last_name, firstName: members[0].first_name,
       state: fs[0]?.state ?? 'to_call', attempts: Math.max(0, ...fs.map((f) => f.attempts)),
@@ -172,8 +154,11 @@ export default async function CallsPage({ searchParams }: { searchParams: SP }) 
       members: members.map((m) => ({
         id: m.id, name: fullName(m), firstName: m.first_name, fund: m.health_fund, missing: missingOf.get(m.id)!,
       })),
-      alsoAbout: pending.length === 0 ? [] :
-        [fam.length > 1 ? `לאשר שיבוץ של ${pending.map((m) => m.first_name).join(', ')}` : 'לאשר שיבוץ'],
+      alsoAbout: [
+        ...(pending.length === 0 ? [] :
+          [fam.length > 1 ? `לאשר שיבוץ של ${pending.map((m) => m.first_name).join(', ')}` : 'לאשר שיבוץ']),
+        ...openInquiries.map((i) => `בירור: ${i.reason}`),
+      ],
       contacts: contactsOf(fam.map((m) => m.id)),
       days: daysOf(fam),
       info: infoOf(fam),
@@ -186,10 +171,10 @@ export default async function CallsPage({ searchParams }: { searchParams: SP }) 
         title="טלפונים להורים"
         sub={tab === 'details'
           ? 'כל מה שחסר לתלמיד/ה בכרטיס אחד, לבקש הכול בשיחה אחת. מה שמסמנים כאן מתעדכן ישר בכרטיס התלמיד/ה, וכשלא חסר כלום הכרטיס יורד מהלוח.'
-          : 'גוררים כרטיס לפי תוצאת השיחה. לא ענו = נספר ניסיון. אושר = כל השיבוצים של התלמיד/ה הופכים לסופיים.'}
+          : 'טלפונים נכנסים לכאן מכרטיס התלמיד/ה (כפתור "טלפון לבירור"). גוררים כרטיס לפי תוצאת השיחה. לא ענו = נספר ניסיון.'}
       />
       <nav className="tabs">
-        <Link href="/calls" className={tab === 'placement' ? 'active' : ''}>אישור שיבוץ <span className="tab-count">{cards.filter((c) => c.column !== 'confirmed').length}</span></Link>
+        <Link href="/calls" className={tab === 'inquiries' ? 'active' : ''}>בירורים <span className="tab-count">{cards.filter((c) => c.status !== 'done').length}</span></Link>
         <Link href="/calls?tab=details" className={tab === 'details' ? 'active' : ''}>פרטים חסרים <span className="tab-count">{detailCards.length}</span></Link>
       </nav>
       {tab === 'details' && followupsRes.error && (
@@ -197,12 +182,12 @@ export default async function CallsPage({ searchParams }: { searchParams: SP }) 
           חסרות טבלאות שיחות במסד הנתונים. יש להריץ את הקובץ supabase/migrations/0045_detail_calls.sql
         </div>
       )}
-      {tab === 'placement' && !migrated && (
+      {tab === 'inquiries' && inquiriesRes.error && (
         <div className="flash flash-error" role="alert">
-          חסר שדה מצב שיחה במסד הנתונים. יש להריץ את הקובץ supabase/migrations/0023_parent_calls.sql
+          חסרה טבלת הבירורים במסד הנתונים. יש להריץ את הקובץ supabase/migrations/0055_inquiries.sql
         </div>
       )}
-      {tab === 'details' ? <DetailsBoard cards={detailCards} /> : <CallBoard cards={cards} />}
+      {tab === 'details' ? <DetailsBoard cards={detailCards} /> : <InquiryBoard cards={cards} />}
     </>
   );
 }

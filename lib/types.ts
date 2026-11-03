@@ -1,5 +1,5 @@
 import type {
-  Assignee, Attendance, CallState, ChargeKind, CheckStatus, Gender, HealthFund, Interest, PaymentMethod, PaymentTrack, Status, StudentStatus,
+  Assignee, Attendance, ChargeKind, CheckStatus, Gender, HealthFund, Interest, PaymentMethod, PaymentTrack, Status, StudentStatus,
   ReceiptField, TaskStatus, TeacherGender, TxKind, TxMethod,
 } from './constants';
 import { DAYS } from './constants';
@@ -41,7 +41,6 @@ export type Student = {
   /** משפחה (אחים = אותה משפחה). null = לא משויך/ת */
   family_id: number | null;
   payment_track: PaymentTrack; standing_order: boolean; needs_review: boolean;
-  call_state: CallState; call_attempts: number; last_call_at: string | null;
 };
 export type Contact = {
   id: number; student_id: number; name: string; relation: string; phone: string; email: string; is_primary: boolean;
