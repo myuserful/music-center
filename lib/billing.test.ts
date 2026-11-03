@@ -66,6 +66,15 @@ describe('diffCharges', () => {
     expect(diffCharges([keep, stale, covered, manual], planned)).toEqual({ insert: [], remove: [stale.id] });
     expect(diffCharges([], planned).insert).toHaveLength(1);
   });
+  it('exact: a charge from another track or price is replaced (track changed for past lessons)', () => {
+    const split = charge({ kind: 'lesson', track: 'maccabi_split', amount: 45 });
+    const later = charge({ kind: 'maccabi_later', track: 'maccabi_split', amount: 95, due_date: '2026-12-20' });
+    const full: NewCharge[] = [{ ...planned[0], track: 'maccabi_full', amount: 140 }];
+    expect(diffCharges([split, later], full)).toEqual({ insert: [], remove: [later.id] });
+    expect(diffCharges([split, later], full, true)).toEqual({ insert: full, remove: [split.id, later.id] });
+    const same = charge({});
+    expect(diffCharges([same], planned, true)).toEqual({ insert: [], remove: [] });
+  });
 });
 
 describe('account', () => {

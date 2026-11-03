@@ -6,7 +6,7 @@ import { BackLink, Empty, Flash, one, PageHead, RoomOptions, StatusBadge, type S
 import { isoDate } from '@/lib/age';
 import { addTeacherHours, deleteTeacher, deleteTeacherHours, saveTeacher, updateTeacherHours } from '@/lib/actions/people';
 import {
-  BOARD_DAYS, DAYS, INTEREST_LABELS, LANGUAGES, TEACHER_GENDER_LABELS, type Interest, type TeacherGender,
+  BANKS, BOARD_DAYS, DAYS, INTEREST_LABELS, LANGUAGES, TEACHER_GENDER_LABELS, type Interest, type TeacherGender,
 } from '@/lib/constants';
 import { loadAll, loadHistory } from '@/lib/data';
 import { createClient } from '@/lib/supabase/server';
@@ -120,6 +120,19 @@ export default async function TeacherPage({ params, searchParams }: { params: Pr
                   {i.name}
                 </label>
               ))}
+            </div>
+          </fieldset>
+          <fieldset className="wide" style={{ border: 0, padding: 0, margin: 0 }}>
+            <legend style={{ fontWeight: 600, fontSize: '0.88rem', marginBottom: 6 }}>חשבון בנק להעברות</legend>
+            <div className="form-grid">
+              <label>
+                בנק
+                <input name="bank_name" list="bank-names" defaultValue={t.bank_name ?? ''} placeholder="בחירה או הקלדה" />
+                <datalist id="bank-names">{BANKS.map((b) => <option key={b} value={b} />)}</datalist>
+              </label>
+              <label>סניף<input name="bank_branch" inputMode="numeric" defaultValue={t.bank_branch ?? ''} dir="ltr" /></label>
+              <label>מספר חשבון<input name="bank_account" inputMode="numeric" defaultValue={t.bank_account ?? ''} dir="ltr" /></label>
+              <label>על שם<input name="bank_holder" defaultValue={t.bank_holder ?? ''} placeholder="רק אם שונה משם המורה" /></label>
             </div>
           </fieldset>
           <label className="wide">הערות<textarea name="notes" defaultValue={t.notes} /></label>

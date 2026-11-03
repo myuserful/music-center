@@ -32,6 +32,10 @@ export async function GET(req: NextRequest) {
     { header: 'חדרים לפי ימים', width: 30, value: (t) => all.teacherRooms(t.id).join(', ') },
     { header: 'שעות עבודה', width: 22, value: hours },
     { header: 'שיעורים', width: 9, value: (t) => all.lessons.filter((l) => l.teacher_id === t.id).length },
+    { header: 'בנק', width: 16, value: (t) => t.bank_name ?? '' },
+    { header: 'סניף', width: 8, value: (t) => t.bank_branch ?? '' },
+    { header: 'מספר חשבון', width: 14, value: (t) => t.bank_account ?? '' },
+    { header: 'חשבון על שם', width: 16, value: (t) => t.bank_holder ?? '' },
     { header: 'פעיל/ה', width: 8, value: (t) => yesNo(t.active) },
     { header: 'הערות', width: 40, value: (t) => t.notes },
   ], teachers);

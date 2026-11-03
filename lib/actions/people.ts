@@ -5,6 +5,7 @@ import {
   TEACHER_GENDER_LABELS,
   type CommitmentFund, type Gender, type HealthFund, type Interest, type TeacherGender,
 } from '../constants';
+import { rebillStudent } from '../charging';
 import { createClient } from '../supabase/server';
 import { overlaps, toMin } from '../time';
 import { dbMessage, done, fail, num, oneOf, str } from './util';
@@ -36,32 +37,33 @@ export async function saveTeacher(fd: FormData) {
     days_per_week: num(fd, 'days_per_week'),
     languages: languageList(fd),
     min_weekly_hours: num(fd, 'min_weekly_hours'),
+    bank_name: str(fd, 'bank_name'),
+    bank_branch: str(fd, 'bank_branch'),
+    bank_account: str(fd, 'bank_account'),
+    bank_holder: str(fd, 'bank_holder'),
   };
   // באקסל לחלק מהמורים יש רק שם פרטי
   if (!row.first_name) fail(here, 'חסר שם פרטי');
   if (row.gender !== 'female') row.teaches_young_boys = false;
 
-  // עד שמריצים את 0046 אין עמודת מינימום: שומרים בלעדיה
-  const { min_weekly_hours: minWeekly, ...base } = row;
-  let teacherId = id;
-  let skippedMin = false;
-  if (id) {
-    let { error } = await db.from('teachers').update(row).eq('id', id);
-    if (error?.code === 'PGRST204') {
-      ({ error } = await db.from('teachers').update(base).eq('id', id));
-      skippedMin = minWeekly != null;
-    }
-    if (error) fail(here, dbMessage(error));
-  } else {
-    let { data, error } = await db.from('teachers').insert(row).select('id').single();
-    if (error?.code === 'PGRST204') {
-      ({ data, error } = await db.from('teachers').insert(base).select('id').single());
-      skippedMin = minWeekly != null;
-    }
-    if (error || !data) fail(here, dbMessage(error!));
-    teacherId = data!.id;
-  }
-  if (skippedMin) fail(`/teachers/${teacherId}`, 'נשמר, חוץ ממינימום השעות בשבוע: צריך להריץ את 0046_teacher_pay.sql ב-Supabase');
+  // עד שמריצים את 0054 / 0046 אין עמודות בנק / מינימום: שומרים בלעדיהן
+  const { bank_name, bank_branch, bank_account, bank_holder, ...noBank } = row;
+  const { min_weekly_hours: minWeekly, ...base } = noBank;
+  const attempts: Record<string, unknown>[] = [row, noBank, base];
+  const write = async (payload: Record<string, unknown>) => {
+    if (id) return { id, error: (await db.from('teachers').update(payload).eq('id', id)).error };
+    const { data, error } = await db.from('teachers').insert(payload).select('id').single();
+    return { id: data?.id as number | undefined, error };
+  };
+  let level = 0;
+  let saved = await write(attempts[0]);
+  while (saved.error?.code === 'PGRST204' && level < attempts.length - 1) saved = await write(attempts[++level]);
+  if (saved.error || !saved.id) fail(here, dbMessage(saved.error!));
+  const teacherId = saved.id;
+  const skipped = [
+    level >= 1 && (bank_name || bank_branch || bank_account || bank_holder) && 'פרטי הבנק (0054_teacher_bank.sql)',
+    level >= 2 && minWeekly != null && 'מינימום השעות בשבוע (0046_teacher_pay.sql)',
+  ].filter(Boolean);
 
   // כלי נגינה וסניפים: מחליפים את כל הרשימה (שתי הטבלאות במקביל)
   const instrumentIds = fd.getAll('instrument_ids').map(Number);
@@ -82,6 +84,7 @@ export async function saveTeacher(fd: FormData) {
   ]);
   const linkError = e1 ?? e2;
   if (linkError) fail(`/teachers/${teacherId}`, dbMessage(linkError));
+  if (skipped.length) fail(`/teachers/${teacherId}`, `נשמר, חוץ מ: ${skipped.join(', ')}. צריך להריץ את הקובץ ב-Supabase`);
   done(`/teachers/${teacherId}`);
 }
 
@@ -257,7 +260,6 @@ export async function saveStudent(fd: FormData) {
   if (row.three_digits && !/^\d{3}$/.test(row.three_digits)) fail(here, 'בשדה "שלוש ספרות" צריך להיות בדיוק 3 ספרות');
   if (row.no_email) row.email = '';
   if (row.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) fail(here, 'כתובת המייל לא תקינה');
-  if (!id && !row.email && !row.no_email) fail(here, 'חסר מייל (או לסמן "אין מייל")');
   if (!row.health_fund) row.health_plan = '';
   // למה ממתינים: נשמר רק כשהשדה מוצג (סטטוס רשימת המתנה), אחרת נשאר מה שהיה
   const waiting = row.status === 'waiting' ? { waiting_reason: str(fd, 'waiting_reason') } : {};
@@ -268,9 +270,9 @@ export async function saveStudent(fd: FormData) {
   const { legacy_track: legacy, ...fields } = row;
   const save = legacy ? (({ payment_track: _, ...rest }) => rest)(fields) : fields;
 
-  // עד שמריצים את 0044 / 0046: שומרים את כל השאר, בלי חוזה, אשראי ומייל
-  const without = ({ contract_signed: _c, card_on_file: _k, email: _e, no_email: _n, ...rest }: typeof save) => rest;
-  const NEED_0044 = 'נשמר, חוץ מחוזה, אשראי ומייל: צריך להריץ את 0044_contract_card.sql ו-0046_student_email.sql ב-Supabase';
+  // עד שמריצים את 0044 / 0046 / 0053: שומרים את כל השאר, בלי חוזה, אשראי, מייל וכלי נוסף
+  const without = ({ contract_signed: _c, card_on_file: _k, email: _e, no_email: _n, second_instrument_id: _s, ...rest }: typeof save) => rest;
+  const NEED_0044 = 'נשמר, חוץ מחוזה, אשראי, מייל וכלי נוסף: צריך להריץ את 0044_contract_card.sql, 0046_student_email.sql ו-0053_second_instrument.sql ב-Supabase';
 
   if (id) {
     const { error } = await db.from('students').update({ ...save, ...waiting }).eq('id', id);
@@ -280,10 +282,21 @@ export async function saveStudent(fd: FormData) {
       fail(here, NEED_0044);
     }
     if (error) fail(here, dbMessage(error));
+    // המסלול השתנה ובחרו לעדכן גם את העבר: חישוב מחדש של החיובים של השיעורים שכבר היו
+    if (!legacy && fd.get('rebill_past') === 'yes') {
+      let r: Awaited<ReturnType<typeof rebillStudent>>;
+      try {
+        r = await rebillStudent(db, id);
+      } catch (e) {
+        fail(here, `נשמר, אבל החיובים הקודמים לא חושבו מחדש: ${(e as Error).message}`);
+      }
+      done(here, r!.changed ? `נשמר. החיובים של ${r!.changed} שיעורים קודמים חושבו מחדש לפי המסלול החדש` : 'נשמר. לא היו חיובים קודמים לשנות');
+    }
     done(here);
   }
   let { data, error } = await db.from('students').insert({ ...save, ...waiting }).select('id').single();
-  if (error?.code === 'PGRST204') ({ data, error } = await db.from('students').insert({ ...without(save), ...waiting }).select('id').single());
+  const partial = error?.code === 'PGRST204';
+  if (partial) ({ data, error } = await db.from('students').insert({ ...without(save), ...waiting }).select('id').single());
   if (error || !data) fail(here, dbMessage(error!));
 
   // איש קשר ראשי אופציונלי כבר ביצירה
@@ -294,6 +307,7 @@ export async function saveStudent(fd: FormData) {
       phone: str(fd, 'contact_phone'), email: '', is_primary: true,
     });
   }
+  if (partial) fail(`/students/${data!.id}`, NEED_0044);
   done(`/students/${data!.id}`, 'התלמיד/ה נוספ/ה');
 }
 

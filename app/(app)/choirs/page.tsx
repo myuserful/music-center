@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Empty, Flash, PageHead, type SP } from '@/components/ui';
 import { CHOIR_CAPACITY, DAYS } from '@/lib/constants';
-import { loadAll } from '@/lib/data';
+import { byId, loadTables, makeRoomLabel } from '@/lib/data';
 import { createClient } from '@/lib/supabase/server';
 import { hhmm } from '@/lib/time';
 import { fullName } from '@/lib/types';
@@ -9,7 +9,13 @@ import { fullName } from '@/lib/types';
 export default async function ChoirsPage({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
   const db = await createClient();
-  const all = await loadAll(db);
+  const t = await loadTables(db, 'choirs', 'choir_enrollments', 'rooms', 'branches', 'teachers');
+  const all = {
+    choirs: t.choirs,
+    enrollments: t.choir_enrollments,
+    roomLabel: makeRoomLabel(byId(t.rooms), byId(t.branches)),
+    maps: { teacher: byId(t.teachers) },
+  };
 
   return (
     <>

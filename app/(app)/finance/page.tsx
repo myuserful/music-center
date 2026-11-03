@@ -5,7 +5,7 @@ import { Empty, Flash, PageHead, one, type SP } from '@/components/ui';
 import { copyRecurring, deleteTransaction, saveTransaction } from '@/lib/actions/finance';
 import { monthLabel, shekel } from '@/lib/billing';
 import { PARENTS_INCOME, SALARY_CATEGORY, TX_KIND_LABELS } from '@/lib/constants';
-import { loadAll, loadBilling } from '@/lib/data';
+import { loadBilling, loadStudentNames, loadTables } from '@/lib/data';
 import { buildEntries, byCategory, inMonth, totals, type Entry } from '@/lib/finance';
 import { createClient } from '@/lib/supabase/server';
 import { fullName, type Transaction } from '@/lib/types';
@@ -15,8 +15,8 @@ const fmtDate = (d: string) => new Date(d).toLocaleDateString('he-IL');
 export default async function FinancePage({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
   const db = await createClient();
-  const [all, billing, tx] = await Promise.all([
-    loadAll(db), loadBilling(db), db.from('transactions').select('*').order('occurred_on', { ascending: false }),
+  const [all, students, billing, tx] = await Promise.all([
+    loadTables(db, 'teachers'), loadStudentNames(db), loadBilling(db), db.from('transactions').select('*').order('occurred_on', { ascending: false }),
   ]);
   const transactions = (tx.data ?? []) as Transaction[];
 
@@ -31,7 +31,7 @@ export default async function FinancePage({ searchParams }: { searchParams: SP }
   const defaultDate = inMonth(today, month) ? today : lastDay;
 
   const entries = buildEntries(transactions, billing.payments,
-    (id) => fullName(all.maps.student.get(id)));
+    (id) => fullName(students.get(id)));
   const monthEntries = entries.filter((e) => inMonth(e.date, month));
   const sum = totals(monthEntries);
   const yearSum = totals(entries.filter((e) => e.date.startsWith(`${y}-`) && e.date <= lastDay));

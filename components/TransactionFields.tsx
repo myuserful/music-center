@@ -1,4 +1,5 @@
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, TX_METHOD_LABELS, TX_METHODS, type TxKind } from '@/lib/constants';
+import { RECEIPT_ACCEPT } from '@/lib/receiptFile';
 import type { Teacher, Transaction } from '@/lib/types';
 import { fullName } from '@/lib/types';
 
@@ -45,7 +46,7 @@ export function TransactionFields({
         <label>
           {tx?.receipt_path ? 'החלפת קבלה' : 'קבלה / חשבונית (תמונה או מסמך)'}
           {/* בטלפון: אפשר לצלם ישירות או לבחור קובץ */}
-          <input type="file" name="receipt" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx" />
+          <input type="file" name="receipt" accept={RECEIPT_ACCEPT} />
         </label>
         {tx?.receipt_path && (
           <div className="fin-receipt-current">

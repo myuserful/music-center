@@ -4,17 +4,22 @@ import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { ACTIVITY_YEAR, offName, shortDate, weekdayDates } from '@/lib/activityDays';
 import { isoDate } from '@/lib/age';
-import { BOARD_DAYS, DAYS, RECEIPT_FIELD_LABELS, type Gender } from '@/lib/constants';
+import { BOARD_DAYS, DAYS, RECEIPT_FIELD_LABELS, type Gender, type ReceiptField } from '@/lib/constants';
+import { receiptMail } from '@/lib/receiptMail';
 
 /**
  * כפתור "הפקת קבלה": אישור קבלה ב-PDF (לקופה, למשל מכבי).
  * לפי שיעורים שהתקיימו: התאריכים מהשיעורים שהתלמיד/ה הגיע/ה אליהם, והסכום = מחיר מכבי לשיעור × מספרם.
  * בשני המצבים בוחרים את התחום שייכתב: "הבעה ויצירה" או "אומנות".
  * ידני: סכום, ימי פעילות ומספר פעילויות. התאריכים מחושבים מהם, ואפשר להסיר ולהוסיף כל תאריך.
- * כל קבלה שנוצרת נשמרת (בדף "אישורי קבלה" ובכרטיס התלמיד/ה) כדי שאפשר יהיה להוריד אותה שוב
+ * כל קבלה שנוצרת נשמרת (בדף "אישורי קבלה" ובכרטיס התלמיד/ה) כדי שאפשר יהיה להוריד אותה שוב.
+ * יש מייל תקין בכרטיס: אפשר לשלוח את הקבלה במייל כבר בהפקה, עם נושא וגוף מוצעים שאפשר לערוך
  */
-export function ReceiptButton({ studentId, days, gender, attended, price }: {
-  studentId: number; days: number[]; gender: Gender | null;
+export function ReceiptButton({ studentId, name, email, days, gender, attended, price }: {
+  studentId: number; name: string;
+  /** המייל התקין של התלמיד/ה, ריק = אין שליחה במייל */
+  email: string;
+  days: number[]; gender: Gender | null;
   /** תאריכי השיעורים שהתלמיד/ה הגיע/ה אליהם (ימים סגורים) */
   attended: string[]; price: number;
 }) {
@@ -29,9 +34,34 @@ export function ReceiptButton({ studentId, days, gender, attended, price }: {
   const [dates, setDates] = useState<string[]>([]);
   const [extra, setExtra] = useState('');
   const [range, setRange] = useState({ from: `${today.slice(0, 7)}-01`, to: today });
+  const [field, setField] = useState<ReceiptField>('expression');
+  const [send, setSend] = useState(false);
+  // null = הנוסח המוצע (מתעדכן לפי התאריכים), אחרי עריכה - מה שנכתב
+  const [subject, setSubject] = useState<string | null>(null);
+  const [body, setBody] = useState<string | null>(null);
   const router = useRouter();
 
   const lessonDates = attended.filter((d) => d >= range.from && d <= range.to);
+  const suggested = receiptMail({ name, dates: mode === 'lessons' ? lessonDates : dates, field });
+
+  const mailFields = email && (
+    <fieldset className="receipt-mail">
+      <label className="check">
+        <input type="checkbox" checked={send} onChange={(e) => setSend(e.target.checked)} /> לשלוח את הקבלה במייל ל-<span dir="ltr">{email}</span>
+      </label>
+      {send && (
+        <>
+          <input type="hidden" name="send_email" value="1" />
+          <label>נושא<input name="subject" required value={subject ?? suggested.subject} onChange={(e) => setSubject(e.target.value)} /></label>
+          <label>תוכן המייל<textarea name="body" required rows={9} value={body ?? suggested.body} onChange={(e) => setBody(e.target.value)} /></label>
+          {(subject !== null || body !== null) && (
+            <button type="button" className="btn btn-ghost btn-xs" onClick={() => { setSubject(null); setBody(null); }}>חזרה לנוסח המוצע</button>
+          )}
+        </>
+      )}
+    </fieldset>
+  );
+  const submitText = send ? 'יצירת קבלה ושליחה במייל' : 'יצירת קבלה (PDF)';
 
   const regenerate = (next: { picked?: number[]; count?: string; from?: string; skipOff?: boolean }) => {
     const v = { picked, count, from, skipOff, ...next };
@@ -45,7 +75,7 @@ export function ReceiptButton({ studentId, days, gender, attended, price }: {
       <button type="button" className="btn" onClick={() => dialog.current?.showModal()}>הפקת קבלה</button>
       <dialog ref={dialog} className="receipt-dialog" onClick={(e) => e.target === dialog.current && dialog.current.close()}>
         <form className="receipt-form" action={`/students/${studentId}/receipt`} method="post" target="_blank"
-          onSubmit={() => { dialog.current?.close(); setTimeout(() => router.refresh(), 1500); }}>
+          onSubmit={() => { dialog.current?.close(); setTimeout(() => router.refresh(), send ? 5000 : 1500); }}>
           <div className="dash-head">
             <h2>הפקת אישור קבלה</h2>
             <button type="button" className="btn btn-ghost btn-xs" onClick={() => dialog.current?.close()}>סגירה</button>
@@ -57,7 +87,7 @@ export function ReceiptButton({ studentId, days, gender, attended, price }: {
           </nav>
           <label className="receipt-field">
             מה ייכתב באישור
-            <select name="field" defaultValue="expression">
+            <select name="field" value={field} onChange={(e) => setField(e.target.value as ReceiptField)}>
               {Object.entries(RECEIPT_FIELD_LABELS).map(([k, v]) => <option key={k} value={k}>טיפולים ב{v}</option>)}
             </select>
           </label>
@@ -85,8 +115,9 @@ export function ReceiptButton({ studentId, days, gender, attended, price }: {
                 </div>
               )}
               <p className="muted dash-sub">רק שיעורים שהתלמיד/ה הגיע/ה אליהם, מימים סגורים. אפשר לשנות את הסכום</p>
+              {mailFields}
               <div className="form-foot">
-                <button className="btn btn-primary" disabled={lessonDates.length === 0}>יצירת קבלה (PDF)</button>
+                <button className="btn btn-primary" disabled={lessonDates.length === 0}>{submitText}</button>
               </div>
             </>
           ) : (
@@ -136,8 +167,9 @@ export function ReceiptButton({ studentId, days, gender, attended, price }: {
                 התאריכים מחושבים לפי הימים ומספר הפעילויות, ואפשר להסיר או להוסיף כל תאריך (גם תאריך שעבר, יום חמישי או חג)
               </p>
 
+              {mailFields}
               <div className="form-foot">
-                <button className="btn btn-primary" disabled={dates.length === 0}>יצירת קבלה (PDF)</button>
+                <button className="btn btn-primary" disabled={dates.length === 0}>{submitText}</button>
               </div>
             </>
           )}

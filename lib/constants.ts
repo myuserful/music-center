@@ -145,7 +145,13 @@ export const BILLABLE: Attendance[] = ['present', 'absent'];
 export type TxKind = 'income' | 'expense';
 export const TX_KIND_LABELS: Record<TxKind, string> = { income: 'הכנסה', expense: 'הוצאה' };
 
-export type TxMethod = 'bank_transfer' | 'credit' | 'cash' | 'check' | 'standing_order' | 'bit';
+/** בנקים להצעה בטופס המורה (אפשר גם להקליד אחר) */
+export const BANKS = [
+  'בנק לאומי', 'בנק הפועלים', 'בנק דיסקונט', 'בנק מזרחי טפחות', 'הבנק הבינלאומי',
+  'בנק מרכנתיל', 'בנק ירושלים', 'בנק הדואר', 'וואן זירו',
+];
+
+export type TxMethod ='bank_transfer' | 'credit' | 'cash' | 'check' | 'standing_order' | 'bit';
 export const TX_METHODS: TxMethod[] = ['bank_transfer', 'credit', 'cash', 'check', 'standing_order', 'bit'];
 export const TX_METHOD_LABELS: Record<TxMethod, string> = {
   bank_transfer: 'העברה בנקאית',

@@ -7,7 +7,7 @@ import { loadAll } from '@/lib/data';
 import { createClient } from '@/lib/supabase/server';
 import { toMin } from '@/lib/time';
 import { filterTeachers, queryString, teacherFilters } from '@/lib/filters';
-import { fullName } from '@/lib/types';
+import { bankLabel, fullName } from '@/lib/types';
 
 export default async function TeachersPage({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
@@ -79,7 +79,7 @@ export default async function TeachersPage({ searchParams }: { searchParams: SP 
       <section className="card table-wrap">
         {teachers.length === 0 ? <Empty>{all.teachers.length === 0 ? 'אין מורים עדיין' : 'לא נמצאו מורים'}</Empty> : (
           <table>
-            <thead><tr><th>שם</th><th>כלים</th><th>סניפים</th><th>מעוניין/ת</th><th>מחיר</th><th>חדרים לפי ימים</th><th>ימי עבודה</th><th>שיעורים</th><th>פנויים</th><th>טלפון</th></tr></thead>
+            <thead><tr><th>שם</th><th>כלים</th><th>סניפים</th><th>מעוניין/ת</th><th>מחיר</th><th>חדרים לפי ימים</th><th>ימי עבודה</th><th>שיעורים</th><th>פנויים</th><th>טלפון</th><th>חשבון בנק</th></tr></thead>
             <tbody>
               {teachers.map((t) => {
                 const hours = all.hours.filter((h) => h.teacher_id === t.id);
@@ -100,6 +100,7 @@ export default async function TeachersPage({ searchParams }: { searchParams: SP 
                     <td>{all.lessons.filter((l) => l.teacher_id === t.id).length}</td>
                     <td><Link href={`/schedule?teacher=${t.id}`}>{all.teacherFree(t.id).length}</Link></td>
                     <td dir="ltr" style={{ textAlign: 'end' }}>{t.phone}</td>
+                    <td>{bankLabel(t)}</td>
                   </tr>
                 );
               })}

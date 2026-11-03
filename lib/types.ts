@@ -15,6 +15,8 @@ export type Teacher = {
   interest: Interest | null; days_per_week: number | null; languages: string[];
   /** מינימום שעות בשבוע שהתחייבנו למורה (null = אין) */
   min_weekly_hours: number | null;
+  /** חשבון בנק להעברות (לפני 0054: חסר). bank_holder: רק אם החשבון על שם אחר */
+  bank_name?: string; bank_branch?: string; bank_account?: string; bank_holder?: string;
 };
 /** תוספת לשכר המורה: זמן (דקות) או סכום (בונוס), עם סיבה */
 export type TeacherExtra = {
@@ -23,7 +25,18 @@ export type TeacherExtra = {
 /** שכר חודש שאושר ושולם */
 export type TeacherPayroll = {
   teacher_id: number; month: string; amount: number; minutes: number; transaction_id: number | null; paid_on: string;
+  /** ההוצאה שנרשמה: מספר האסמכתא וקובץ האסמכתא */
+  transactions?: { reference: string; receipt_path: string | null; receipt_name: string } | null;
 };
+/** פרטי הבנק של מורה בשורה אחת להעברה ('' אם לא מולאו) */
+export function bankLabel(t: Pick<Teacher, 'bank_name' | 'bank_branch' | 'bank_account' | 'bank_holder'>) {
+  return [
+    t.bank_name,
+    t.bank_branch && `סניף ${t.bank_branch}`,
+    t.bank_account && `חשבון ${t.bank_account}`,
+    t.bank_holder && `על שם ${t.bank_holder}`,
+  ].filter(Boolean).join(' · ');
+}
 export type TeacherHours = {
   id: number; teacher_id: number; weekday: number; start_time: string; end_time: string; room_id: number | null;
 };

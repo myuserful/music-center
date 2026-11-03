@@ -1,16 +1,17 @@
 import Link from 'next/link';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { Empty, Flash, one, PageHead, type SP } from '@/components/ui';
-import { addTeacherExtra, approvePayroll, cancelPayroll, deleteTeacherExtra } from '@/lib/actions/payroll';
+import { addTeacherExtra, approvePayroll, attachPayrollProof, cancelPayroll, deleteTeacherExtra } from '@/lib/actions/payroll';
 import { isActivityDate } from '@/lib/activityDays';
 import { monthLabel, shekel } from '@/lib/billing';
 import { LESSON_MINUTES, TX_METHOD_LABELS, TX_METHODS } from '@/lib/constants';
 import { addDays, dmy, hoursLabel, taughtBy } from '@/lib/day';
-import { loadAll, loadPayroll } from '@/lib/data';
+import { loadPayroll, loadTables } from '@/lib/data';
 import { payrollRange, teacherPayroll } from '@/lib/payroll';
 import { autoLockOverdue } from '@/lib/dayLock';
+import { RECEIPT_ACCEPT } from '@/lib/receiptFile';
 import { createClient } from '@/lib/supabase/server';
-import { fullName } from '@/lib/types';
+import { bankLabel, fullName } from '@/lib/types';
 
 /** שכר מורים לחודש: לפי השעות שלימדו בפועל (ימים סגורים), תוספות, השלמה למינימום שבועי ובונוסים */
 export default async function PayrollPage({ searchParams }: { searchParams: SP }) {
@@ -23,7 +24,7 @@ export default async function PayrollPage({ searchParams }: { searchParams: SP }
   const db = await createClient();
   // ימים שלא נסגרו ביד נסגרים 24 שעות אחרי שנגמרו (לפני שמחשבים)
   await autoLockOverdue(db);
-  const [all, data] = await Promise.all([loadAll(db), loadPayroll(db, range)]);
+  const [all, data] = await Promise.all([loadTables(db, 'teachers'), loadPayroll(db, range)]);
   // שבוע עם פעילות לפי לוח מועדי הפעילות (ראשון עד שישי)
   const isActiveWeek = (sunday: string) => [0, 1, 2, 3, 4, 5].some((i) => isActivityDate(addDays(sunday, i)));
 
@@ -78,6 +79,9 @@ export default async function PayrollPage({ searchParams }: { searchParams: SP }
                   <td>
                     <a href={`#pay-${t.id}`}><strong>{fullName(t)}</strong></a>
                     {p.openDays.length > 0 && <div><span className="badge badge-pending">{p.openDays.length} ימים לא נסגרו</span></div>}
+                    <div className="muted pay-bank">
+                      {bankLabel(t) || <Link href={`/teachers/${t.id}`}>חסרים פרטי בנק</Link>}
+                    </div>
                   </td>
                   <td className="nowrap">{hoursLabel(p.ownMinutes)}</td>
                   <td className="nowrap">{p.subMinutes ? hoursLabel(p.subMinutes) : '—'}</td>
@@ -93,6 +97,21 @@ export default async function PayrollPage({ searchParams }: { searchParams: SP }
                         {p.amount != null && Math.round(p.amount) !== Math.round(Number(paid.amount)) && (
                           <div className="muted">החישוב היום: {shekel(p.amount)}</div>
                         )}
+                        {paid.transactions?.reference && <div className="muted">אסמכתא: {paid.transactions.reference}</div>}
+                        {paid.transactions?.receipt_path && paid.transaction_id && (
+                          <a className="fin-clip" href={`/finance/${paid.transaction_id}/receipt`} target="_blank" rel="noopener" title={paid.transactions.receipt_name}>📎 אסמכתא</a>
+                        )}
+                        <details className="pay-attach">
+                          <summary>{paid.transactions?.receipt_path ? 'החלפת אסמכתא' : 'צירוף אסמכתא'}</summary>
+                          <form action={attachPayrollProof} className="pay-proof">
+                            <input type="hidden" name="teacher_id" value={t.id} />
+                            <input type="hidden" name="month" value={month} />
+                            <input type="hidden" name="back" value={back} />
+                            <input name="reference" defaultValue={paid.transactions?.reference ?? ''} placeholder="מספר אסמכתא" aria-label="מספר אסמכתא" />
+                            <input type="file" name="receipt" accept={RECEIPT_ACCEPT} aria-label="קובץ אסמכתא" />
+                            <button className="btn btn-xs">שמירה</button>
+                          </form>
+                        </details>
                         <form action={cancelPayroll}>
                           <input type="hidden" name="teacher_id" value={t.id} />
                           <input type="hidden" name="month" value={month} />
@@ -101,21 +120,27 @@ export default async function PayrollPage({ searchParams }: { searchParams: SP }
                         </form>
                       </div>
                     ) : (
-                      <form action={approvePayroll} className="inline fin-salary">
+                      <form action={approvePayroll}>
                         <input type="hidden" name="teacher_id" value={t.id} />
                         <input type="hidden" name="month" value={month} />
                         <input type="hidden" name="minutes" value={p.totalMinutes} />
                         <input type="hidden" name="back" value={back} />
-                        <input type="number" name="amount" min="1" step="any" defaultValue={p.amount ?? ''} aria-label="סכום" required />
-                        <select name="method" defaultValue="bank_transfer" aria-label="אמצעי">
-                          {TX_METHODS.map((m) => <option key={m} value={m}>{TX_METHOD_LABELS[m]}</option>)}
-                        </select>
-                        <ConfirmButton
-                          className="btn btn-xs btn-primary"
-                          message={`לאשר ולרשום תשלום שכר ל${fullName(t)}?${p.openDays.length ? ` שימו לב: ${p.openDays.length} ימים עוד לא נסגרו ולא נספרו` : ''}`}
-                        >
-                          אישור ותשלום
-                        </ConfirmButton>
+                        <div className="fin-salary">
+                          <input type="number" name="amount" min="1" step="any" defaultValue={p.amount ?? ''} aria-label="סכום" required />
+                          <select name="method" defaultValue="bank_transfer" aria-label="אמצעי">
+                            {TX_METHODS.map((m) => <option key={m} value={m}>{TX_METHOD_LABELS[m]}</option>)}
+                          </select>
+                          <ConfirmButton
+                            className="btn btn-xs btn-primary"
+                            message={`לאשר ולרשום תשלום שכר ל${fullName(t)}?${p.openDays.length ? ` שימו לב: ${p.openDays.length} ימים עוד לא נסגרו ולא נספרו` : ''}`}
+                          >
+                            אישור ותשלום
+                          </ConfirmButton>
+                        </div>
+                        <div className="pay-proof">
+                          <input name="reference" placeholder="מספר אסמכתא" aria-label="מספר אסמכתא" />
+                          <input type="file" name="receipt" accept={RECEIPT_ACCEPT} aria-label="קובץ אסמכתא" />
+                        </div>
                       </form>
                     )}
                   </td>

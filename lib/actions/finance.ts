@@ -1,31 +1,12 @@
 'use server';
 
 import { TX_METHODS, type TxKind } from '../constants';
+import { RECEIPT_BUCKET as BUCKET, receiptFile, uploadReceipt } from '../receiptFile';
 import { createClient } from '../supabase/server';
 import { backTo, dbMessage, done, fail, num, oneOf, str } from './util';
 
 const HOME = '/finance';
 const monthOf = (date: string) => `${HOME}?month=${date.slice(0, 7)}`;
-
-const BUCKET = 'receipts';
-const MAX_RECEIPT = 10 * 1024 * 1024;
-const RECEIPT_TYPES = /^(image\/|application\/pdf$|application\/msword$|application\/vnd\.openxmlformats-officedocument\.|application\/vnd\.ms-excel$)/;
-
-/** קובץ קבלה מהטופס (או null אם לא נבחר), אחרי בדיקת סוג וגודל */
-function receiptFile(fd: FormData): File | null | string {
-  const f = fd.get('receipt');
-  if (!(f instanceof File) || f.size === 0) return null;
-  if (f.size > MAX_RECEIPT) return 'הקובץ גדול מ-10MB';
-  if (!RECEIPT_TYPES.test(f.type)) return 'אפשר לצרף תמונה, PDF, Word או Excel';
-  return f;
-}
-
-async function uploadReceipt(db: Awaited<ReturnType<typeof createClient>>, file: File, date: string) {
-  const ext = (file.name.match(/\.([a-z0-9]{1,5})$/i)?.[1] ?? 'bin').toLowerCase();
-  const path = `${date.slice(0, 7)}/${crypto.randomUUID()}.${ext}`;
-  const { error } = await db.storage.from(BUCKET).upload(path, file, { contentType: file.type });
-  return error ? { error: error.message } : { path };
-}
 
 /** הכנסה / הוצאה חדשה, או עדכון (כשיש id). משמש גם לרישום שכר מורה מהטבלה */
 export async function saveTransaction(fd: FormData) {

@@ -15,6 +15,51 @@ type Raw = Record<string, unknown[]>;
 const noRpc = { app: 0, billing: 0 };
 const tryRpc = (since: number) => Date.now() - since > 60_000;
 
+type Tables = {
+  branches: Branch[];
+  rooms: Room[];
+  instruments: Instrument[];
+  teachers: Teacher[];
+  teacher_instruments: { teacher_id: number; instrument_id: number }[];
+  teacher_branches: { teacher_id: number; branch_id: number }[];
+  teacher_hours: TeacherHours[];
+  students: Student[];
+  contacts: Contact[];
+  lessons: Lesson[];
+  choirs: Choir[];
+  choir_enrollments: Enrollment[];
+};
+
+const QUERIES: Record<keyof Tables, (db: DB) => PromiseLike<{ data: unknown; error: { message: string } | null }>> = {
+  branches: (db) => db.from('branches').select('*').order('name'),
+  rooms: (db) => db.from('rooms').select('*').order('name'),
+  instruments: (db) => db.from('instruments').select('*').order('name'),
+  teachers: (db) => db.from('teachers').select('*').order('first_name'),
+  teacher_instruments: (db) => db.from('teacher_instruments').select('*'),
+  teacher_branches: (db) => db.from('teacher_branches').select('*'),
+  teacher_hours: (db) => db.from('teacher_hours').select('*').order('weekday').order('start_time'),
+  students: (db) => db.from('students').select('*').order('first_name'),
+  contacts: (db) => db.from('contacts').select('*').order('is_primary', { ascending: false }),
+  lessons: (db) => db.from('lessons').select('*').order('weekday').order('start_time'),
+  choirs: (db) => db.from('choirs').select('*').order('weekday').order('start_time'),
+  choir_enrollments: (db) => db.from('choir_enrollments').select('*').order('created_at'),
+};
+
+/** רק הטבלאות שהדף צריך. מה שלא נטען לא קיים גם בטיפוס, אז שכחה של טבלה נתפסת בקומפילציה */
+export async function loadTables<K extends keyof Tables>(db: DB, ...tables: K[]): Promise<Pick<Tables, K>> {
+  const results = await Promise.all(tables.map((t) => QUERIES[t](db)));
+  const firstError = results.find((r) => r.error)?.error;
+  if (firstError) throw new Error(firstError.message);
+  return Object.fromEntries(tables.map((t, i) => [t, results[i].data ?? []])) as unknown as Pick<Tables, K>;
+}
+
+/** שמות התלמידים בלבד (רוב המשקל של הנתונים הוא שאר הפרטים של התלמידים) */
+export async function loadStudentNames(db: DB) {
+  const { data, error } = await db.from('students').select('id, first_name, last_name');
+  if (error) throw new Error(error.message);
+  return byId(data as { id: number; first_name: string; last_name: string }[]);
+}
+
 /** כל הטבלאות בקריאה אחת (פונקציה app_data במסד, 0025). אם עוד לא הורצה - 12 קריאות נפרדות */
 async function fetchAll(db: DB): Promise<Raw> {
   if (tryRpc(noRpc.app)) {
@@ -23,26 +68,16 @@ async function fetchAll(db: DB): Promise<Raw> {
     if (rpc.error.code !== 'PGRST202') throw new Error(rpc.error.message);
     noRpc.app = Date.now();
   }
-
-  const queries = {
-    branches: db.from('branches').select('*').order('name'),
-    rooms: db.from('rooms').select('*').order('name'),
-    instruments: db.from('instruments').select('*').order('name'),
-    teachers: db.from('teachers').select('*').order('first_name'),
-    teacher_instruments: db.from('teacher_instruments').select('*'),
-    teacher_branches: db.from('teacher_branches').select('*'),
-    teacher_hours: db.from('teacher_hours').select('*').order('weekday').order('start_time'),
-    students: db.from('students').select('*').order('first_name'),
-    contacts: db.from('contacts').select('*').order('is_primary', { ascending: false }),
-    lessons: db.from('lessons').select('*').order('weekday').order('start_time'),
-    choirs: db.from('choirs').select('*').order('weekday').order('start_time'),
-    choir_enrollments: db.from('choir_enrollments').select('*').order('created_at'),
-  };
-  const results = await Promise.all(Object.values(queries));
-  const firstError = results.find((r) => r.error)?.error;
-  if (firstError) throw new Error(firstError.message);
-  return Object.fromEntries(Object.keys(queries).map((k, i) => [k, results[i].data ?? []]));
+  return await loadTables(db, ...(Object.keys(QUERIES) as (keyof Tables)[])) as unknown as Raw;
 }
+
+export const byId = <T extends { id: number }>(rows: T[]) => new Map(rows.map((r) => [r.id, r]));
+
+/** "חדר 1 · גינות דוד" */
+export const makeRoomLabel = (room: Map<number, Room>, branch: Map<number, Branch>) => (id: number | null) => {
+  const r = id ? room.get(id) : undefined;
+  return r ? `${r.name} · ${branch.get(r.branch_id)?.name ?? ''}` : '';
+};
 
 /** טוען את כל נתוני המערכת. מרכז מוזיקה הוא בהיקף של מאות רשומות, אז זה פשוט ומהיר. */
 export async function loadAll(db: DB) {
@@ -62,7 +97,6 @@ export async function loadAll(db: DB) {
     enrollments: raw.choir_enrollments as Enrollment[],
   };
 
-  const byId = <T extends { id: number }>(rows: T[]) => new Map(rows.map((r) => [r.id, r]));
   const maps = {
     branch: byId(data.branches),
     room: byId(data.rooms),
@@ -72,10 +106,7 @@ export async function loadAll(db: DB) {
     choir: byId(data.choirs),
   };
 
-  const roomLabel = (id: number | null) => {
-    const r = id ? maps.room.get(id) : undefined;
-    return r ? `${r.name} · ${maps.branch.get(r.branch_id)?.name ?? ''}` : '';
-  };
+  const roomLabel = makeRoomLabel(maps.room, maps.branch);
   /** החדרים של מורה לפי ימים (החדר שייך לשעות העבודה ביום מסוים), למשל "שני: חדר 1 · גינות דוד" */
   const teacherRooms = (teacherId: number) => {
     const seen = new Set<string>();
@@ -154,11 +185,15 @@ export async function loadBilling(db: DB, studentId?: number) {
 
 /** סגירת יום: השיעורים שנשמרו והמורים שסגרו את היום */
 export async function loadDay(db: DB, date: string) {
-  const [lessons, closures, sub] = await Promise.all([
+  const [lessons, closures, sub, lock, extras, movedOut] = await Promise.all([
     db.from('day_lessons').select('*').eq('lesson_date', date).order('start_time'),
     db.from('day_closures').select('*').eq('lesson_date', date),
     // 0040 (מילוי מקום) כבר הורצה?
     db.from('day_lessons').select('substitute_id').limit(1),
+    // נעילת היום, תוספות זמן למורים, ותלמידים שהועברו מהיום הזה ליום אחר (לפני 0052: אין)
+    db.from('day_locks').select('*').eq('lesson_date', date).maybeSingle(),
+    db.from('teacher_extras').select('*').eq('extra_date', date).not('minutes', 'is', null).order('id'),
+    db.from('day_lessons').select('*').eq('moved_from', date),
   ]);
   const firstError = [lessons, closures].find((r) => r.error)?.error;
   // עד שמריצים את 0039: מציגים את מערכת השעות הקבועה, בלי אפשרות לשמור
@@ -167,12 +202,6 @@ export async function loadDay(db: DB, date: string) {
       missingLock: true, lock: null as DayLock | null, extras: [] as TeacherExtra[], movedOut: [] as DayLesson[] };
   }
   if (firstError) throw new Error(firstError.message);
-  // נעילת היום, תוספות זמן למורים, ותלמידים שהועברו מהיום הזה ליום אחר (לפני 0052: אין)
-  const [lock, extras, movedOut] = await Promise.all([
-    db.from('day_locks').select('*').eq('lesson_date', date).maybeSingle(),
-    db.from('teacher_extras').select('*').eq('extra_date', date).not('minutes', 'is', null).order('id'),
-    db.from('day_lessons').select('*').eq('moved_from', date),
-  ]);
   return { lessons: lessons.data as DayLesson[], closures: closures.data as DayClosure[], missingTables: false,
     missingSubstitute: sub.error?.code === '42703' || sub.error?.code === 'PGRST204',
     missingLock: !!lock.error || !!movedOut.error,
@@ -231,7 +260,7 @@ export async function loadPayroll(db: DB, range: { first: string; to: string }) 
     db.from('day_lessons').select('*').gte('lesson_date', range.first).lte('lesson_date', range.to),
     db.from('day_closures').select('*').gte('lesson_date', range.first).lte('lesson_date', range.to),
     db.from('teacher_extras').select('*').gte('extra_date', range.first).lte('extra_date', range.to).order('extra_date'),
-    db.from('teacher_payroll').select('*').eq('month', range.first),
+    db.from('teacher_payroll').select('*, transactions(reference, receipt_path, receipt_name)').eq('month', range.first),
   ]);
   const err = [lessons, closures].find((r) => r.error)?.error;
   if (err) throw new Error(err.message);

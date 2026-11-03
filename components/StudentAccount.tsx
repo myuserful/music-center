@@ -19,6 +19,15 @@ const STATUS_CLASS: Record<ChargeStatus, string> = {
   upcoming: 'badge-muted', returned: 'badge-undecided',
 };
 
+/** ממה מורכב הסכום לבקשה: השיעורים שנשארו בחודש, ועוד החוב (או פחות הזכות) */
+function requestParts(r: NonNullable<ReturnType<typeof monthRequest>>, balance: number) {
+  return [
+    r.lessons ? `${r.lessons} שיעורים × ${shekel(r.price)}` : 'אין עוד שיעורים החודש',
+    r.free ? `ועוד ${r.free} חינם בזוג` : '',
+    balance < 0 ? `+ חוב ${shekel(-balance)}` : balance > 0 ? `− זכות ${shekel(balance)}` : '',
+  ].filter(Boolean).join(' · ');
+}
+
 /** החשבון של תלמיד/ה: יתרה, כמה לבקש החודש, תשלומים, פיקדונות וחיובים */
 export function StudentAccount({ student, charges, payments, receipts, settings, weekdays, pair, today, missing, sumit, hasEmail }: {
   student: Student; charges: Charge[]; payments: Payment[]; receipts: Receipt[]; settings: BillingSettings;
@@ -66,7 +75,7 @@ export function StudentAccount({ student, charges, payments, receipts, settings,
         <div className="stat">
           <div className="stat-num">{request ? shekel(request.total) : perLesson ? shekel(Math.max(0, -a.balance)) : '—'}</div>
           <div className="stat-label">
-            {request ? `לתשלום מראש עד סוף ${monthLabel(`${month}-01`)} (${request.lessons} שיעורים × ${shekel(request.price)}${request.free ? ` · ועוד ${request.free} חינם בזוג` : ''})`
+            {request ? `לתשלום עד סוף ${monthLabel(`${month}-01`)} (${requestParts(request, a.balance)})`
               : perLesson ? `לתשלום עכשיו (פיקדון ${shekel(Number(settings.price_fund_deposit))} על כל שיעור, לא מראש)`
               : 'מסלול לא ידוע: אי אפשר לחשב'}
           </div>

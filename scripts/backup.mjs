@@ -14,12 +14,6 @@ if (!url || !key) {
 }
 const headers = { apikey: key, Authorization: `Bearer ${key}` };
 
-// סדר שחזור לפי קשרים בין טבלאות. טבלאות חדשות שלא ברשימה נכנסות בסוף
-const ORDER = [
-  'branches', 'rooms', 'instruments', 'teachers', 'teacher_instruments', 'teacher_branches',
-  'teacher_hours', 'students', 'contacts', 'lessons', 'choirs', 'choir_enrollments', 'tasks',
-];
-
 async function get(path, extra = {}) {
   const res = await fetch(`${url}/rest/v1/${path}`, { headers: { ...headers, ...extra } });
   if (!res.ok) throw new Error(`${path}: ${res.status} ${await res.text()}`);
@@ -28,10 +22,20 @@ async function get(path, extra = {}) {
 
 const api = await get('', { Accept: 'application/openapi+json' });
 const defs = api.definitions ?? {};
-const tables = Object.keys(defs).sort((a, b) => {
-  const i = (t) => (ORDER.includes(t) ? ORDER.indexOf(t) : ORDER.length);
-  return i(a) - i(b) || a.localeCompare(b);
-});
+
+// סדר שחזור לפי הקשרים בין הטבלאות: כל טבלה אחרי הטבלאות שהיא מפנה אליהן (גם טבלאות חדשות)
+const tables = [];
+const seen = new Set();
+const visit = (t) => {
+  if (seen.has(t) || !defs[t]) return;
+  seen.add(t);
+  for (const col of Object.values(defs[t].properties ?? {})) {
+    const fk = col.description?.match(/<fk table='([^']+)'/);
+    if (fk) visit(fk[1]);
+  }
+  tables.push(t);
+};
+Object.keys(defs).sort().forEach(visit);
 
 const PAGE = 1000;
 const data = {};

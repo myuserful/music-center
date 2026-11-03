@@ -4,6 +4,7 @@ import { billClosedDays } from './charging';
 import { LESSON_MINUTES } from './constants';
 import { addDays, dayRows, dayStats, dayTeacherIds, israelToday, overdueDates, unknownTrackStudents } from './day';
 import { loadAll } from './data';
+import { oncePerKey } from './oncePerKey';
 import type { DB } from './supabase/server';
 import { fullName, type DayClosure, type DayLesson, type DayStats, type TeacherExtra } from './types';
 
@@ -94,29 +95,39 @@ export async function rebillDay(db: DB, date: string): Promise<number> {
   return billed.unbilled;
 }
 
-/**
- * סגירה אוטומטית: יום שלא נסגר ביד נסגר 24 שעות אחרי שנגמר (ימי פעילות לפי הלוח, וכל יום שנשמר בו משהו).
- * רץ כשפותחים את המערכת, כך שגם אם לא נכנסו כמה ימים - כל מה שהתאחר נסגר. לא מפיל את הדף אם משהו נכשל
- */
-export async function autoLockOverdue(db: DB): Promise<void> {
+/** מחזיר true אם הבדיקה הושלמה (ואפשר לא לבדוק שוב היום), false אם משהו נכשל */
+async function lockOverdueDays(db: DB): Promise<boolean> {
   try {
     const settings = await db.from('billing_settings').select('auto_close_from').single();
-    if (settings.error) return; // עוד לא הריצו את 0052
+    if (settings.error) return false; // עוד לא הריצו את 0052
     const from = settings.data.auto_close_from as string;
     const last = addDays(israelToday(), -2);
-    if (from > last) return;
+    if (from > last) return true;
     const [locks, saved] = await Promise.all([
       db.from('day_locks').select('lesson_date').gte('lesson_date', from).lte('lesson_date', last),
       db.from('day_lessons').select('lesson_date').gte('lesson_date', from).lte('lesson_date', last),
     ]);
-    if (locks.error || saved.error) return;
+    if (locks.error || saved.error) return false;
     const candidates = [
       ...activityDays(ACTIVITY_YEAR.weekdays).filter((d) => d >= from && d <= last),
       ...saved.data.map((r) => r.lesson_date as string),
     ];
     const overdue = overdueDates(candidates, new Set(locks.data.map((l) => l.lesson_date as string)), from, israelToday());
     await lockDays(db, overdue, true);
+    return true;
   } catch (e) {
     console.error('סגירה אוטומטית של ימים נכשלה:', e);
+    return false;
   }
+}
+
+const lockOncePerDay = oncePerKey(lockOverdueDays);
+
+/**
+ * סגירה אוטומטית: יום שלא נסגר ביד נסגר 24 שעות אחרי שנגמר (ימי פעילות לפי הלוח, וכל יום שנשמר בו משהו).
+ * רץ כשפותחים את המערכת, כך שגם אם לא נכנסו כמה ימים - כל מה שהתאחר נסגר. לא מפיל את הדף אם משהו נכשל.
+ * מה שמתאחר משתנה רק כשהתאריך מתחלף, אז כל שרת בודק פעם ביום ולא בכל טעינת דף
+ */
+export function autoLockOverdue(db: DB): Promise<void> {
+  return lockOncePerDay(israelToday(), db);
 }

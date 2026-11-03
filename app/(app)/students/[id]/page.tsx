@@ -5,6 +5,7 @@ import { BirthDateFields } from '@/components/BirthDateFields';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { HealthFundFields } from '@/components/HealthFundFields';
 import { InquiryButton } from '@/components/InquiryButton';
+import { PaymentTrackField } from '@/components/PaymentTrackField';
 import { StudentHistory } from '@/components/LessonHistory';
 import { ReceiptButton } from '@/components/ReceiptButton';
 import { StudentAccount } from '@/components/StudentAccount';
@@ -18,7 +19,7 @@ import {
 import { deleteContact, deleteStudent, saveContact, saveStudent } from '@/lib/actions/people';
 import { linkFromForm, unlinkFromForm } from '@/lib/actions/siblings';
 import {
-  BILLABLE, CHOIR_CAPACITY, DAYS, DEFAULT_LANGUAGE, LANGUAGES, GENDER_LABELS, PAYMENT_TRACK_LABELS, PAYMENT_TRACKS, STATUS_LABELS, STATUSES,
+  BILLABLE, CHOIR_CAPACITY, DAYS, DEFAULT_LANGUAGE, LANGUAGES, GENDER_LABELS, STATUS_LABELS, STATUSES,
   STUDENT_STATUS_LABELS, type Gender,
 } from '@/lib/constants';
 import { loadAll, loadBilling, loadCertificates, loadHistory, loadReceipts } from '@/lib/data';
@@ -78,7 +79,7 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
         {!isNew && <InquiryButton studentId={s.id} name={fullName(s)} />}
         {!isNew && (
           <ReceiptButton
-            studentId={s.id} days={receiptDays} gender={s.gender}
+            studentId={s.id} name={fullName(s)} email={studentEmail(s)} days={receiptDays} gender={s.gender}
             attended={attendedDates(history!.lessons, history!.closures)} price={Number(loadedBilling!.settings.price_maccabi_full)}
           />
         )}
@@ -138,14 +139,7 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
           <HealthFundFields fund={s.health_fund} plan={s.health_plan} />
           <label className="check"><input type="checkbox" name="has_referral" defaultChecked={s.has_referral} /> יש הפניה</label>
           <label className="check"><input type="checkbox" name="hmo_reported" defaultChecked={s.hmo_reported} /> עודכן/ה בקופה</label>
-          <label>
-            מסלול תשלום
-            <select name="payment_track" defaultValue={s.payment_track}>
-              {/* ערך ישן מלפני 0041 (מכבי / התחייבות): מוצג כמו שהוא כדי ששמירה לא תשנה אותו */}
-              {!PAYMENT_TRACKS.includes(s.payment_track) && <option value={s.payment_track}>{s.payment_track} (ישן)</option>}
-              {PAYMENT_TRACKS.map((t) => <option key={t} value={t}>{PAYMENT_TRACK_LABELS[t]}</option>)}
-            </select>
-          </label>
+          <PaymentTrackField track={s.payment_track} existing={!isNew} />
           <label className="check"><input type="checkbox" name="standing_order" defaultChecked={s.standing_order} /> הוראת קבע</label>
           <label className="check"><input type="checkbox" name="contract_signed" defaultChecked={s.contract_signed} /> חתמו על חוזה</label>
           <label className="check"><input type="checkbox" name="card_on_file" defaultChecked={s.card_on_file} /> נלקחו פרטי אשראי</label>

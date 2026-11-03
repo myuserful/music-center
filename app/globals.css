@@ -743,6 +743,11 @@ tr.inactive td { opacity: 0.5; }
 .fin-receipt input[type="file"] { padding: 8px; border: 1px dashed var(--line); border-radius: var(--radius-sm); background: var(--bg); }
 .fin-receipt-current { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
 .fin-clip { display: inline-block; margin-top: 2px; font-size: 0.8rem; white-space: nowrap; }
+.pay-bank { font-size: 0.8rem; max-width: 220px; }
+.pay-proof { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.pay-proof input:not([type="file"]) { width: 150px; }
+.pay-proof input[type="file"] { max-width: 210px; font-size: 0.8rem; }
+.pay-attach summary { cursor: pointer; font-size: 0.8rem; }
 
 /* ---- טעינה ---- */
 .skeleton { background: linear-gradient(90deg, var(--line) 25%, #f0f2f7 50%, var(--line) 75%); background-size: 200% 100%; animation: shimmer 1.2s infinite linear; border-radius: var(--radius-sm); }
@@ -880,6 +885,10 @@ a.link-chip:hover { text-decoration: underline; }
 .receipt-dates { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 16px; }
 .receipt-form .flash { margin: 14px 0 0; }
 .receipt-field { display: flex; flex-direction: column; gap: 4px; max-width: 260px; margin-bottom: 12px; }
+.receipt-mail { display: flex; flex-direction: column; gap: 8px; margin: 16px 0 0; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.receipt-mail label:not(.check) { display: flex; flex-direction: column; gap: 4px; }
+.receipt-mail textarea { resize: vertical; font: inherit; }
+.receipt-mail .btn { align-self: flex-start; }
 
 /* לימוד בבית המורה: משבצות ממוספרות מתחת ללוח של המורה */
 .home-strip { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 10px; margin-top: 10px; padding-top: 8px; border-top: 1px dashed #cfcbe3; }

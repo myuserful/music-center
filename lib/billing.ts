@@ -103,16 +103,22 @@ export function planCharges(
   return { charges: [...charges.values()], unbilled };
 }
 
+// גם המסלול, הסכום ותאריך התשלום: חיוב שחושב לפי מסלול או מחיר אחר יוחלף
+const exactKey = (c: Parameters<typeof chargeKey>[0] & { track: string; due_date: string }) =>
+  `${chargeKey(c)}:${c.track}:${Number(c.amount)}:${c.due_date}`;
+
 /**
  * מה לשנות כדי שהחיובים הקיימים יתאימו לתוכנית. חיוב שכבר קיים נשאר כמו שהוא (גם אם המחיר השתנה מאז).
+ * exact: חיוב שהמסלול, הסכום או תאריך התשלום שלו שונים מהתוכנית מוחלף (חישוב מחדש אחרי שינוי מסלול).
  * פיקדון שכבר הביאו עליו התחייבות לא נמחק
  */
-export function diffCharges(existing: Charge[], planned: NewCharge[]): { insert: NewCharge[]; remove: number[] } {
-  const have = new Set(existing.map(chargeKey));
-  const want = new Set(planned.map(chargeKey));
+export function diffCharges(existing: Charge[], planned: NewCharge[], exact = false): { insert: NewCharge[]; remove: number[] } {
+  const key = exact ? exactKey : chargeKey;
+  const have = new Set(existing.map(key));
+  const want = new Set(planned.map(key));
   return {
-    insert: planned.filter((c) => !have.has(chargeKey(c))),
-    remove: existing.filter((c) => c.kind !== 'manual' && !want.has(chargeKey(c)) && !c.commitment_on).map((c) => c.id),
+    insert: planned.filter((c) => !have.has(key(c))),
+    remove: existing.filter((c) => c.kind !== 'manual' && !want.has(key(c)) && !c.commitment_on).map((c) => c.id),
   };
 }
 

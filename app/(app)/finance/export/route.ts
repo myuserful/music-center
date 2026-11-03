@@ -1,6 +1,6 @@
 import type { NextRequest } from 'next/server';
 import { TX_KIND_LABELS } from '@/lib/constants';
-import { loadAll, loadBilling } from '@/lib/data';
+import { loadBilling, loadStudentNames } from '@/lib/data';
 import { xlsxResponse } from '@/lib/export';
 import { buildEntries, type Entry } from '@/lib/finance';
 import { createClient } from '@/lib/supabase/server';
@@ -12,13 +12,13 @@ export async function GET(req: NextRequest) {
   const year = /^\d{4}$/.test(req.nextUrl.searchParams.get('year') ?? '')
     ? req.nextUrl.searchParams.get('year')!
     : new Date().toISOString().slice(0, 4);
-  const [all, billing, { data, error }] = await Promise.all([
-    loadAll(db), loadBilling(db), db.from('transactions').select('*'),
+  const [students, billing, { data, error }] = await Promise.all([
+    loadStudentNames(db), loadBilling(db), db.from('transactions').select('*'),
   ]);
   if (error) return new Response(error.message, { status: 500 });
   const transactions = (data ?? []) as Transaction[];
   const manual = new Map(transactions.map((t) => [t.id, t]));
-  const entries = buildEntries(transactions, billing.payments, (id) => fullName(all.maps.student.get(id)))
+  const entries = buildEntries(transactions, billing.payments, (id) => fullName(students.get(id)))
     .filter((e) => e.date.startsWith(`${year}-`))
     .sort((a, b) => a.date.localeCompare(b.date));
   const tx = (e: Entry) => (e.source === 'manual' ? manual.get(e.id) : undefined);
