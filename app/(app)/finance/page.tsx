@@ -7,6 +7,8 @@ import { monthLabel, shekel } from '@/lib/billing';
 import { EXPENSE_GROUP_LABELS, PARENTS_INCOME, PARENTS_REFUND, SALARY_CATEGORY, TX_KIND_LABELS, type ExpenseGroup } from '@/lib/constants';
 import { loadBilling, loadStudentNames, loadTables } from '@/lib/data';
 import { buildEntries, byCategory, inMonth, paidToTeachers, totals, trackBreakdown, yearTable, type Entry } from '@/lib/finance';
+import { autoLockOverdue } from '@/lib/dayLock';
+import { monthPayroll } from '@/lib/payrollMonth';
 import { ensureRecurring } from '@/lib/recurring';
 import { createClient } from '@/lib/supabase/server';
 import { fullName, type Transaction } from '@/lib/types';
@@ -19,6 +21,8 @@ export default async function FinancePage({ searchParams }: { searchParams: SP }
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
   // הוצאות קבועות שהגיע זמנן נרשמות לפני שמחשבים
   const recurringError = await ensureRecurring(db, today);
+  // ימים שלא נסגרו ביד נסגרים 24 שעות אחרי שנגמרו, כמו בדף השכר, כדי שהסכומים יהיו זהים
+  await autoLockOverdue(db);
   const [all, students, billing, tx, payroll] = await Promise.all([
     loadTables(db, 'teachers'), loadStudentNames(db), loadBilling(db), db.from('transactions').select('*').order('occurred_on', { ascending: false }),
     db.from('teacher_payroll').select('month, transaction_id'),
@@ -52,6 +56,7 @@ export default async function FinancePage({ searchParams }: { searchParams: SP }
   const expenseOf = (group: ExpenseGroup) => byCategory(monthEntries.filter((e) => e.group === group), 'expense');
   const year = yearTable(entries, y);
   const paidNow = paidToTeachers(entries, month);
+  const pay = await monthPayroll(db, all.teachers, month.slice(0, 7), today);
 
   const canCopy = transactions.some((t) => t.recurring && inMonth(t.occurred_on, prevMonth));
 
@@ -86,7 +91,8 @@ export default async function FinancePage({ searchParams }: { searchParams: SP }
           <div className="fin-track-row"><span>הכנסות</span><strong className="fin-track-in">{shekel(sum.income)}</strong></div>
           {otherIncome > 0 && <div className="muted">כולל {shekel(otherIncome)} מניסיון, מסלול לא ידוע ורישום ידני</div>}
           {sum.refunds > 0 && <div className="fin-track-row muted"><span>הוחזר להורים</span><span>{shekel(sum.refunds)}</span></div>}
-          <div className="fin-track-row"><span>שכר מורים</span><strong className="fin-neg">{shekel(sum.teachers)}</strong></div>
+          <div className="fin-track-row"><span>שכר מורים ששולם</span><strong className="fin-neg">{shekel(sum.teachers)}</strong></div>
+          <div className="muted">מתוך {shekel(pay.left.total)} על החודש. נותר לשלם {shekel(pay.left.remaining)}</div>
           <div className="fin-track-row"><span>הוצאות קבועות</span><strong className="fin-neg">{shekel(sum.fixed)}</strong></div>
           <div className="fin-track-row"><span>הוצאות משתנות</span><strong className="fin-neg">{shekel(sum.variable)}</strong></div>
           <div className="fin-track-row"><span>סה&quot;כ הוצאות (כולל שכר)</span><strong className="fin-neg">{shekel(sum.expenses)}</strong></div>
@@ -184,9 +190,14 @@ export default async function FinancePage({ searchParams }: { searchParams: SP }
             )}
           </div>
           <div>
-            <div className="fin-track-row"><span>שכר שאושר על החודש הזה</span><strong>{shekel(sum.teachers)}</strong></div>
+            <div className="fin-track-row"><span>שכר מורים על {monthLabel(month)}</span><strong>{shekel(pay.left.total)}</strong></div>
+            <div className="fin-track-row"><span>שולם מתוכו ({pay.left.paidCount} מתוך {pay.rows.length} מורים)</span><strong>{shekel(pay.left.paid)}</strong></div>
+            <div className="fin-track-row"><span>נותר לשלם</span><strong className={pay.left.remaining ? 'fin-neg' : ''}>{shekel(pay.left.remaining)}</strong></div>
+            {pay.left.noRate > 0 && <div className="muted">לא כולל {pay.left.noRate} מורים בלי תעריף לשעה</div>}
+            {pay.left.gap > 0 && <div className="muted">ועוד {shekel(pay.left.gap)} הפרש אצל מי ששולם</div>}
+            {Math.round(sum.teachers) !== Math.round(pay.left.paid) && <div className="muted">ביומן נרשם שכר של {shekel(sum.teachers)} על החודש הזה</div>}
             <p className="muted">
-              זה הסכום שיורד מהרווח של {monthLabel(month)}, גם אם שולם בחודש אחר. שכר נכנס לכאן רק אחרי שמאשרים אותו בדף שכר המורים.
+              רק מה ששולם יורד מהרווח של {monthLabel(month)}, גם אם שולם בחודש אחר. הסכום מחושב לפי השעות בימים שנסגרו, אז הוא יכול לעלות כשנסגרים עוד ימים.
             </p>
             <Link className="btn btn-primary" href={`/payroll?month=${month.slice(0, 7)}`}>לשכר מורים של {monthLabel(month)}</Link>
           </div>

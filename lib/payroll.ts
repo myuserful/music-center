@@ -25,14 +25,20 @@ export function payrollRange(month: string) {
 }
 
 /**
- * כמה נותר לשלם למורים בחודש: הסכום המחושב של מי שעוד לא שולם.
+ * כמה שכר יש בחודש, כמה שולם וכמה נותר. נותר = הסכום המחושב של מי שעוד לא שולם, total = שולם + נותר.
  * noRate: מורים עם שעות בלי תעריף, שהסכום שלהם לא ידוע ולא נספר.
  * gap: אצל מי שכבר שולם, כמה החישוב היום גבוה ממה ששולם (למשל שיעורים שנוספו אחרי התשלום)
  */
 export function payrollRemaining(rows: { amount: number | null; paid: number | null }[]) {
   const open = rows.filter((r) => r.paid === null && (r.amount === null || r.amount > 0));
+  const remaining = open.reduce((n, r) => n + (r.amount ?? 0), 0);
+  const paidRows = rows.filter((r) => r.paid !== null);
+  const paid = paidRows.reduce((n, r) => n + (r.paid ?? 0), 0);
   return {
-    remaining: open.reduce((n, r) => n + (r.amount ?? 0), 0),
+    total: paid + remaining,
+    paid,
+    paidCount: paidRows.length,
+    remaining,
     unpaid: open.filter((r) => r.amount !== null).length,
     noRate: open.filter((r) => r.amount === null).length,
     gap: rows.reduce((n, r) => n + (r.paid !== null && r.amount !== null ? Math.max(0, Math.round(r.amount - r.paid)) : 0), 0),

@@ -2,12 +2,12 @@ import Link from 'next/link';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { Empty, Flash, one, PageHead, type SP } from '@/components/ui';
 import { addTeacherExtra, approvePayroll, attachPayrollProof, cancelPayroll, deleteTeacherExtra } from '@/lib/actions/payroll';
-import { isActivityDate } from '@/lib/activityDays';
 import { monthLabel, shekel } from '@/lib/billing';
 import { LESSON_MINUTES, TX_METHOD_LABELS, TX_METHODS } from '@/lib/constants';
-import { addDays, dmy, hoursLabel, taughtBy } from '@/lib/day';
-import { loadPayroll, loadTables } from '@/lib/data';
-import { monthsMissingReceipt, payrollRange, payrollRemaining, teacherPayroll } from '@/lib/payroll';
+import { addDays, dmy, hoursLabel } from '@/lib/day';
+import { loadTables } from '@/lib/data';
+import { monthsMissingReceipt } from '@/lib/payroll';
+import { monthPayroll } from '@/lib/payrollMonth';
 import { autoLockOverdue } from '@/lib/dayLock';
 import { RECEIPT_ACCEPT } from '@/lib/receiptFile';
 import { createClient } from '@/lib/supabase/server';
@@ -19,37 +19,17 @@ export default async function PayrollPage({ searchParams }: { searchParams: SP }
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
   const monthParam = one(sp.month);
   const month = /^\d{4}-\d{2}$/.test(monthParam) ? monthParam : today.slice(0, 7);
-  const range = payrollRange(month);
   const back = `/payroll?month=${month}`;
   const db = await createClient();
   // ימים שלא נסגרו ביד נסגרים 24 שעות אחרי שנגמרו (לפני שמחשבים)
   await autoLockOverdue(db);
-  const [all, data, allPaid] = await Promise.all([
-    loadTables(db, 'teachers'), loadPayroll(db, range),
+  const [all, allPaid] = await Promise.all([
+    loadTables(db, 'teachers'),
     db.from('teacher_payroll').select('month, transaction_id, transactions(receipt_path)'),
   ]);
   const otherMonths = monthsMissingReceipt((allPaid.data ?? []) as unknown as Parameters<typeof monthsMissingReceipt>[0], month);
-  // שבוע עם פעילות לפי לוח מועדי הפעילות (ראשון עד שישי)
-  const isActiveWeek = (sunday: string) => [0, 1, 2, 3, 4, 5].some((i) => isActivityDate(addDays(sunday, i)));
-
-  const involved = new Set([
-    ...data.lessons.map(taughtBy), ...data.extras.map((e) => e.teacher_id), ...data.payroll.map((p) => p.teacher_id),
-  ]);
-  const rows = all.teachers
-    .filter((t) => involved.has(t.id) || (t.active && Number(t.min_weekly_hours ?? 0) > 0))
-    .sort((a, b) => fullName(a).localeCompare(fullName(b), 'he'))
-    .map((t) => ({
-      t,
-      p: teacherPayroll({
-        teacherId: t.id, month, rows: data.lessons, closures: data.closures, extras: data.extras,
-        minWeeklyHours: t.min_weekly_hours, rate: t.hourly_rate == null ? null : Number(t.hourly_rate),
-        today, lessonMinutes: LESSON_MINUTES, isActiveWeek,
-      }),
-      paid: data.payroll.find((x) => x.teacher_id === t.id),
-    }));
-  const total = rows.reduce((n, r) => n + (r.paid ? Number(r.paid.amount) : r.p.amount ?? 0), 0);
+  const { range, missing, rows, left } = await monthPayroll(db, all.teachers, month, today);
   const openCount = rows.reduce((n, r) => n + r.p.openDays.length, 0);
-  const left = payrollRemaining(rows.map((r) => ({ amount: r.p.amount, paid: r.paid ? Number(r.paid.amount) : null })));
   const noReceipt = rows.filter((r) => r.paid?.transaction_id && !r.paid.transactions?.receipt_path).length;
 
   return (
@@ -61,10 +41,10 @@ export default async function PayrollPage({ searchParams }: { searchParams: SP }
         </form>
       </PageHead>
       <Flash sp={sp} />
-      {data.missing && <div className="flash flash-error">צריך להריץ את 0046_teacher_pay.sql ב-Supabase (תוספות, מינימום ואישור תשלום)</div>}
+      {missing && <div className="flash flash-error">צריך להריץ את 0046_teacher_pay.sql ב-Supabase (תוספות, מינימום ואישור תשלום)</div>}
 
       <div className="grid grid-4" style={{ marginBottom: 18 }}>
-        <div className="stat"><div className="stat-num">{shekel(total)}</div><div className="stat-label">סה&quot;כ שכר החודש</div></div>
+        <div className="stat"><div className="stat-num">{shekel(left.total)}</div><div className="stat-label">סה&quot;כ שכר החודש</div></div>
         <div className={`stat ${left.remaining ? 'stat-pending' : ''}`}>
           <div className="stat-num">{shekel(left.remaining)}</div>
           <div className="stat-label">

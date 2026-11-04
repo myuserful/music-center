@@ -6,12 +6,12 @@ import type { DayLesson, TeacherExtra } from './types';
 describe('payrollRemaining', () => {
   it('סופר רק מי שעוד לא שולם', () => {
     expect(payrollRemaining([{ amount: 360, paid: null }, { amount: 1450, paid: 1450 }, { amount: 100, paid: null }]))
-      .toEqual({ remaining: 460, unpaid: 2, noRate: 0, gap: 0 });
+      .toEqual({ total: 1910, paid: 1450, paidCount: 1, remaining: 460, unpaid: 2, noRate: 0, gap: 0 });
   });
 
   it('בלי תעריף לא נכנס לסכום אבל נספר בנפרד, ומי שיוצא לו 0 לא נספר', () => {
     expect(payrollRemaining([{ amount: null, paid: null }, { amount: 0, paid: null }]))
-      .toEqual({ remaining: 0, unpaid: 0, noRate: 1, gap: 0 });
+      .toEqual({ total: 0, paid: 0, paidCount: 0, remaining: 0, unpaid: 0, noRate: 1, gap: 0 });
   });
 
   it('הפרש רק כשהחישוב גבוה ממה ששולם', () => {
