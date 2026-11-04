@@ -6,8 +6,10 @@ import {
   type CommitmentFund, type Gender, type HealthFund, type Interest, type TeacherGender,
 } from '../constants';
 import { rebillStudent } from '../charging';
+import { addContactToSiblings, removeContactFromSiblings, syncSharedDetails } from '../familySync';
 import { createClient } from '../supabase/server';
 import { overlaps, toMin } from '../time';
+import type { Contact } from '../types';
 import { dbMessage, done, fail, num, oneOf, str } from './util';
 
 // ---- מורים ----
@@ -278,6 +280,8 @@ export async function saveStudent(fd: FormData) {
   const NEED_0044 = 'נשמר, חוץ מחוזה, אשראי, מייל, כלי נוסף ופרטי הפניה: צריך להריץ את 0044_contract_card.sql, 0046_student_email.sql, 0053_second_instrument.sql ו-0056_referral_holder.sql ב-Supabase';
 
   if (id) {
+    // מה היה לפני השמירה: רק מה ששונה עובר לאחים
+    const { data: before } = await db.from('students').select('family_id, email, no_email, contract_signed, card_on_file').eq('id', id).maybeSingle();
     const { error } = await db.from('students').update({ ...save, ...waiting }).eq('id', id);
     if (error?.code === 'PGRST204') {
       const { error: e } = await db.from('students').update({ ...without(save), ...waiting }).eq('id', id);
@@ -285,6 +289,15 @@ export async function saveStudent(fd: FormData) {
       fail(here, NEED_0044);
     }
     if (error) fail(here, dbMessage(error));
+    let synced = false;
+    if (before) {
+      try {
+        synced = await syncSharedDetails(db, id, before.family_id, before, save);
+      } catch (e) {
+        fail(here, `נשמר, אבל הפרטים לא עודכנו אצל האחים: ${(e as Error).message}`);
+      }
+    }
+    const siblingsNote = synced ? ' מייל, חוזה ואשראי עודכנו גם אצל האחים' : '';
     // המסלול השתנה ובחרו לעדכן גם את העבר: חישוב מחדש של החיובים של השיעורים שכבר היו
     if (!legacy && fd.get('rebill_past') === 'yes') {
       let r: Awaited<ReturnType<typeof rebillStudent>>;
@@ -293,9 +306,9 @@ export async function saveStudent(fd: FormData) {
       } catch (e) {
         fail(here, `נשמר, אבל החיובים הקודמים לא חושבו מחדש: ${(e as Error).message}`);
       }
-      done(here, r!.changed ? `נשמר. החיובים של ${r!.changed} שיעורים קודמים חושבו מחדש לפי המסלול החדש` : 'נשמר. לא היו חיובים קודמים לשנות');
+      done(here, `${r!.changed ? `נשמר. החיובים של ${r!.changed} שיעורים קודמים חושבו מחדש לפי המסלול החדש` : 'נשמר. לא היו חיובים קודמים לשנות'}.${siblingsNote}`);
     }
-    done(here);
+    done(here, `נשמר.${siblingsNote}`);
   }
   let { data, error } = await db.from('students').insert({ ...save, ...waiting }).select('id').single();
   const partial = error?.code === 'PGRST204';
@@ -338,13 +351,27 @@ export async function saveContact(fd: FormData) {
   if (row.is_primary) await db.from('contacts').update({ is_primary: false }).eq('student_id', studentId);
   const { error } = await db.from('contacts').insert(row);
   if (error) fail(here, dbMessage(error));
+  try {
+    const { student_id: _, ...fields } = row;
+    await addContactToSiblings(db, studentId, fields);
+  } catch (e) {
+    fail(here, `נשמר, אבל לא נוסף אצל האחים: ${(e as Error).message}`);
+  }
   done(here);
 }
 
 export async function deleteContact(fd: FormData) {
   const db = await createClient();
   const here = `/students/${num(fd, 'student_id')}`;
+  const { data: removed } = await db.from('contacts').select('*').eq('id', num(fd, 'id')!).maybeSingle<Contact>();
   const { error } = await db.from('contacts').delete().eq('id', num(fd, 'id')!);
   if (error) fail(here, dbMessage(error));
+  if (removed) {
+    try {
+      await removeContactFromSiblings(db, removed);
+    } catch (e) {
+      fail(here, `נמחק, אבל לא נמחק אצל האחים: ${(e as Error).message}`);
+    }
+  }
   done(here, 'נמחק');
 }

@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import {
   HEALTH_FUND_LABELS, INQUIRY_STATUSES, PAYMENT_TRACKS, URGENCIES, type HealthFund, type InquiryStatus, type Urgency,
 } from '../constants';
+import { withFamilies } from '../familySync';
 import { DETAILS_TOPIC, missingDetails, type MissingKey } from '../missingDetails';
 import { createClient } from '../supabase/server';
 import type { Student } from '../types';
@@ -120,7 +121,7 @@ export async function receiveDetail(studentIds: number[], key: MissingKey, value
     key === 'card' ? { card_on_file: true } :
     key === 'referral' ? { has_referral: true } :
     key === 'id_number' ? { id_number: v } :
-    key === 'email' ? (v === 'none' ? { no_email: true } : { email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? v : '' }) :
+    key === 'email' ? (v === 'none' ? { no_email: true } : { email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? v : '', no_email: false }) :
     key === 'payment_track' ? { payment_track: oneOf(v, PAYMENT_TRACKS.filter((t) => t !== 'unknown')) } :
     { health_fund: oneOf(v, Object.keys(HEALTH_FUND_LABELS) as HealthFund[]) };
   const [field, val] = Object.entries(update)[0];
@@ -128,14 +129,24 @@ export async function receiveDetail(studentIds: number[], key: MissingKey, value
   if (!studentIds.length) return { ok: true };
 
   const db = await createClient();
-  const { data, error } = await db.from('students').update(update).in('id', studentIds).select('*');
+  // חוזה, אשראי ומייל עוברים לכל האחים. "אין מייל" רק למי שנבחרו, כדי לא לסמן מי שיש לו/ה מייל
+  const shared = key === 'contract' || key === 'card' || (key === 'email' && v !== 'none');
+  let targets = studentIds;
+  if (shared) {
+    try {
+      targets = await withFamilies(db, studentIds);
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+  }
+  const { data, error } = await db.from('students').update(update).in('id', targets).select('*');
   if (error || !data?.length) return { ok: false, error: error ? dbMessage(error) : `לא נשמר: ${field}` };
   const done = (data as Student[]).filter((s) => missingDetails(s).length === 0).map((s) => s.id);
   if (done.length) {
     await db.from('call_followups').delete().in('student_id', done).eq('topic', DETAILS_TOPIC);
   }
   revalidatePath('/calls');
-  for (const id of studentIds) revalidatePath(`/students/${id}`);
+  for (const id of targets) revalidatePath(`/students/${id}`);
   revalidatePath('/students');
   return { ok: true };
 }

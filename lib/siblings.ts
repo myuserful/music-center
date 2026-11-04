@@ -82,5 +82,68 @@ export function suggestSiblings(students: S[], contacts: C[], rejected: Set<stri
 export const siblingsOf = <T extends Pick<Student, 'id' | 'family_id'>>(s: T, students: T[]) =>
   s.family_id == null ? [] : students.filter((x) => x.family_id === s.family_id && x.id !== s.id);
 
+/** הפרטים המשותפים לכל המשפחה בכרטיס התלמיד/ה (טלפונים נמצאים באנשי הקשר) */
+export type SharedDetails = Pick<Student, 'email' | 'no_email' | 'contract_signed' | 'card_on_file'>;
+
+/** מה השתנה בפרטים המשותפים בשמירת כרטיס. מייל ו"אין מייל" תמיד יחד. בלי שינוי - לא נוגעים באחים */
+export function changedShared(before: SharedDetails, after: SharedDetails): Partial<SharedDetails> {
+  const out: Partial<SharedDetails> = {};
+  if ((before.email ?? '') !== (after.email ?? '') || !!before.no_email !== !!after.no_email) {
+    out.email = after.email;
+    out.no_email = after.no_email;
+  }
+  if (!!before.contract_signed !== !!after.contract_signed) out.contract_signed = after.contract_signed;
+  if (!!before.card_on_file !== !!after.card_on_file) out.card_on_file = after.card_on_file;
+  return out;
+}
+
+/**
+ * כשמקשרים אחים: משלימים מה שחסר אצל כל אחד/ת ממה שיש אצל האחרים.
+ * חוזה ואשראי: מספיק שאצל אחד/ת יש. מייל: רק למי שאין. שני מיילים שונים נשארים כמו שהם
+ */
+export function mergeShared(students: (SharedDetails & { id: number })[]): { id: number; update: Partial<SharedDetails> }[] {
+  const sorted = [...students].sort((a, b) => a.id - b.id);
+  const contract = sorted.some((s) => s.contract_signed);
+  const card = sorted.some((s) => s.card_on_file);
+  const email = sorted.map((s) => (s.email ?? '').trim()).find(Boolean) ?? '';
+  const noEmail = sorted.some((s) => s.no_email);
+  return sorted.flatMap((s) => {
+    const update: Partial<SharedDetails> = {};
+    if (contract && !s.contract_signed) update.contract_signed = true;
+    if (card && !s.card_on_file) update.card_on_file = true;
+    if (!(s.email ?? '').trim()) {
+      if (email) {
+        update.email = email;
+        if (s.no_email) update.no_email = false;
+      } else if (noEmail && !s.no_email) update.no_email = true;
+    }
+    return Object.keys(update).length ? [{ id: s.id, update }] : [];
+  });
+}
+
+type ContactFields = Pick<Contact, 'name' | 'relation' | 'phone' | 'email' | 'is_primary'>;
+
+/** איש קשר "זהה" אצל אח/ות: אותו טלפון, ואם אין טלפון - אותו מייל, ואם גם לא - אותו שם */
+export const contactKey = (c: Pick<Contact, 'name' | 'phone' | 'email'>) =>
+  normalizePhone(c.phone) || (c.email ?? '').trim().toLowerCase() || (c.name ?? '').trim();
+
+/** אנשי הקשר שחסרים אצל כל אח/ות. מי שאין לו/ה ראשי מקבל/ת את הראשי של האחים */
+export function missingContacts(studentIds: number[], contacts: (ContactFields & { student_id: number })[]) {
+  const sources = [...contacts].sort((a, b) => Number(b.is_primary) - Number(a.is_primary));
+  return studentIds.flatMap((id) => {
+    const own = contacts.filter((c) => c.student_id === id);
+    const have = new Set(own.map(contactKey));
+    let hasPrimary = own.some((c) => c.is_primary);
+    return sources.filter((c) => c.student_id !== id).flatMap((c) => {
+      const key = contactKey(c);
+      if (!key || have.has(key)) return [];
+      have.add(key);
+      const is_primary = !hasPrimary && c.is_primary;
+      hasPrimary ||= is_primary;
+      return [{ student_id: id, name: c.name, relation: c.relation, phone: c.phone, email: c.email, is_primary }];
+    });
+  });
+}
+
 /** מפתח קיבוץ לכרטיס משפחתי: המשפחה, או התלמיד/ה לבד */
 export const familyKey = (s: Pick<Student, 'id' | 'family_id'>) => (s.family_id != null ? `f${s.family_id}` : `s${s.id}`);

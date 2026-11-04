@@ -1,5 +1,50 @@
 import { describe, expect, it } from 'vitest';
-import { familyKey, normalizePhone, pairKey, siblingsOf, suggestSiblings } from './siblings';
+import { changedShared, familyKey, mergeShared, missingContacts, normalizePhone, pairKey, siblingsOf, suggestSiblings } from './siblings';
+
+const details = (id: number, d: Partial<Parameters<typeof mergeShared>[0][number]> = {}) => ({
+  id, email: '', no_email: false, contract_signed: false, card_on_file: false, ...d,
+});
+const person = (student_id: number, phone: string, c: Partial<Parameters<typeof missingContacts>[1][number]> = {}) => ({
+  student_id, name: 'אמא', relation: 'אמא', phone, email: '', is_primary: false, ...c,
+});
+
+describe('changedShared', () => {
+  it('רק מה ששונה עובר לאחים', () => {
+    const before = details(1, { email: 'a@b.co', contract_signed: true });
+    expect(changedShared(before, before)).toEqual({});
+    expect(changedShared(before, { ...before, contract_signed: false })).toEqual({ contract_signed: false });
+    expect(changedShared(before, { ...before, email: 'c@d.co' })).toEqual({ email: 'c@d.co', no_email: false });
+  });
+});
+
+describe('mergeShared', () => {
+  it('משלים חוזה, אשראי ומייל למי שחסר', () => {
+    expect(mergeShared([details(1, { contract_signed: true, email: 'a@b.co' }), details(2, { card_on_file: true, no_email: true })])).toEqual([
+      { id: 1, update: { card_on_file: true } },
+      { id: 2, update: { contract_signed: true, email: 'a@b.co', no_email: false } },
+    ]);
+  });
+
+  it('שני מיילים שונים נשארים, ואין מה להשלים = אין עדכון', () => {
+    expect(mergeShared([details(1, { email: 'a@b.co' }), details(2, { email: 'c@d.co' })])).toEqual([]);
+  });
+
+  it('"אין מייל" עובר למי שאין לו/ה מייל', () => {
+    expect(mergeShared([details(1, { no_email: true }), details(2)])).toEqual([{ id: 2, update: { no_email: true } }]);
+  });
+});
+
+describe('missingContacts', () => {
+  it('מוסיף רק מי שחסר, ומזהה טלפון גם בכתיב אחר', () => {
+    const out = missingContacts([1, 2], [person(1, '052-1234567'), person(2, '+972521234567'), person(1, '0531234567', { name: 'אבא' })]);
+    expect(out.map((c) => [c.student_id, c.phone])).toEqual([[2, '0531234567']]);
+  });
+
+  it('מי שאין לו/ה ראשי מקבל/ת את הראשי של האח/ות, פעם אחת', () => {
+    const out = missingContacts([1, 2], [person(1, '0521234567', { is_primary: true }), person(1, '0531234567')]);
+    expect(out.map((c) => [c.phone, c.is_primary])).toEqual([['0521234567', true], ['0531234567', false]]);
+  });
+});
 
 const st = (id: number, last_name: string, family_id: number | null = null) => ({ id, last_name, family_id });
 const ct = (student_id: number, phone: string) => ({ student_id, phone });

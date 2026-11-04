@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { mergeFamily } from '../familySync';
 import { createClient } from '../supabase/server';
 import { dbMessage } from './util';
 
@@ -36,7 +37,13 @@ export async function linkSiblings(studentIds: number[]): Promise<Result> {
   const error = (await Promise.all(updates)).find((r) => r.error)?.error;
   if (error) return { ok: false, error: dbMessage(error) };
   if (others.length) await db.from('families').delete().in('id', others);
-  refresh(ids);
+  // מייל, חוזה, אשראי ואנשי קשר: כל אחד/ת משלים/ה מה שחסר מהאחרים. כל מקומות הקישור עוברים כאן
+  try {
+    refresh(await mergeFamily(db, family));
+  } catch (e) {
+    refresh(ids);
+    return { ok: false, error: `האחים קושרו, אבל הפרטים לא הושלמו: ${(e as Error).message}` };
+  }
   return { ok: true };
 }
 
@@ -84,7 +91,8 @@ export async function linkFromForm(fd: FormData) {
   if (!a || !b || a === b) return;
   const db = await createClient();
   await db.from('sibling_rejections').delete().eq('student_a', Math.min(a, b)).eq('student_b', Math.max(a, b));
-  await linkSiblings([a, b]);
+  const res = await linkSiblings([a, b]);
+  if (!res.ok) console.error('linkSiblings:', res.error);
 }
 
 export async function unlinkFromForm(fd: FormData) {
