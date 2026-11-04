@@ -4,9 +4,9 @@ import { filterFundStudents, fundFilters } from '@/lib/funds';
 import { idsPdf } from '@/lib/fundsPdf';
 import { createClient } from '@/lib/supabase/server';
 
-/** הורדת PDF עם תעודות הזהות לפי הסינון בלוח הקופות, בלי לשנות כלום */
+/** הורדת PDF עם ת"ז, שם פרטי וטלפון לפי הסינון בלוח הקופות, בלי לשנות כלום */
 export async function GET(req: NextRequest) {
   const all = await loadAll(await createClient());
   const f = fundFilters(Object.fromEntries(req.nextUrl.searchParams));
-  return idsPdf(filterFundStudents(all, f), f);
+  return idsPdf(filterFundStudents(all, f), all.contacts, f);
 }
