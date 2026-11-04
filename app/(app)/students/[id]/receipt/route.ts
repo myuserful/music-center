@@ -6,6 +6,7 @@ import { loadBilling, loadHistory, loadReceipts } from '@/lib/data';
 import type { ReceiptField } from '@/lib/constants';
 import { sendMail, studentEmail } from '@/lib/mail';
 import { pdfResponse } from '@/lib/pdf';
+import { referralHolder } from '@/lib/receiptMail';
 import { receiptPdfFile } from '@/lib/receiptPdf';
 import { createClient } from '@/lib/supabase/server';
 import { fullName, type Student } from '@/lib/types';
@@ -56,7 +57,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const date = q.get('date') ?? '';
   const issuedOn = ISO.test(date) ? date : isoDate(new Date());
-  const name = fullName(s), idNumber = s.id_number.trim();
+  // on_referral=1: האישור על השם ות"ז שעל ההפניה
+  const holder = q.get('on_referral') === '1' ? referralHolder(s) : null;
+  const name = holder?.name ?? fullName(s), idNumber = holder?.idNumber ?? s.id_number.trim();
   const field: ReceiptField = q.get('field') === 'art' ? 'art' : 'expression';
   // שמירה להורדה חוזרת. אם הטבלה עוד לא קיימת (0048) - הקבלה בכל זאת נוצרת
   const row = {

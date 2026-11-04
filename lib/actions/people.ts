@@ -243,6 +243,8 @@ export async function saveStudent(fd: FormData) {
     id_number: str(fd, 'id_number'),
     three_digits: str(fd, 'three_digits'),
     has_referral: fd.get('has_referral') === 'on',
+    referral_name: str(fd, 'referral_name'),
+    referral_id_number: str(fd, 'referral_id_number'),
     hmo_reported: fd.get('hmo_reported') === 'on',
     preferred_times: str(fd, 'preferred_times'),
     language: str(fd, 'language') || DEFAULT_LANGUAGE,
@@ -258,6 +260,7 @@ export async function saveStudent(fd: FormData) {
   };
   if (!row.first_name || !row.last_name) fail(here, 'חסר שם פרטי או שם משפחה');
   if (row.three_digits && !/^\d{3}$/.test(row.three_digits)) fail(here, 'בשדה "שלוש ספרות" צריך להיות בדיוק 3 ספרות');
+  if (!row.referral_name !== !row.referral_id_number) fail(here, 'בפרטי ההפניה צריך למלא גם שם וגם ת"ז');
   if (row.no_email) row.email = '';
   if (row.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) fail(here, 'כתובת המייל לא תקינה');
   if (!row.health_fund) row.health_plan = '';
@@ -270,9 +273,9 @@ export async function saveStudent(fd: FormData) {
   const { legacy_track: legacy, ...fields } = row;
   const save = legacy ? (({ payment_track: _, ...rest }) => rest)(fields) : fields;
 
-  // עד שמריצים את 0044 / 0046 / 0053: שומרים את כל השאר, בלי חוזה, אשראי, מייל וכלי נוסף
-  const without = ({ contract_signed: _c, card_on_file: _k, email: _e, no_email: _n, second_instrument_id: _s, ...rest }: typeof save) => rest;
-  const NEED_0044 = 'נשמר, חוץ מחוזה, אשראי, מייל וכלי נוסף: צריך להריץ את 0044_contract_card.sql, 0046_student_email.sql ו-0053_second_instrument.sql ב-Supabase';
+  // עד שמריצים את 0044 / 0046 / 0053 / 0056: שומרים את כל השאר, בלי חוזה, אשראי, מייל, כלי נוסף ופרטי הפניה
+  const without = ({ contract_signed: _c, card_on_file: _k, email: _e, no_email: _n, second_instrument_id: _s, referral_name: _rn, referral_id_number: _ri, ...rest }: typeof save) => rest;
+  const NEED_0044 = 'נשמר, חוץ מחוזה, אשראי, מייל, כלי נוסף ופרטי הפניה: צריך להריץ את 0044_contract_card.sql, 0046_student_email.sql, 0053_second_instrument.sql ו-0056_referral_holder.sql ב-Supabase';
 
   if (id) {
     const { error } = await db.from('students').update({ ...save, ...waiting }).eq('id', id);

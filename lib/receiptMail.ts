@@ -1,4 +1,11 @@
 import { RECEIPT_FIELD_LABELS, type ReceiptField } from './constants';
+import type { Student } from './types';
+
+/** השם ות"ז שעל ההפניה, אם מולאו שניהם. לפני 0056 השדות לא קיימים */
+export function referralHolder(s: Pick<Student, 'referral_name' | 'referral_id_number'>) {
+  const name = s.referral_name?.trim(), idNumber = s.referral_id_number?.trim();
+  return name && idNumber ? { name, idNumber } : null;
+}
 
 const MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
 

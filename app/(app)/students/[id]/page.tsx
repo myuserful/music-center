@@ -24,6 +24,7 @@ import {
 } from '@/lib/constants';
 import { loadAll, loadBilling, loadCertificates, loadHistory, loadReceipts } from '@/lib/data';
 import { studentEmail } from '@/lib/mail';
+import { referralHolder } from '@/lib/receiptMail';
 import { normalizePhone, siblingsOf } from '@/lib/siblings';
 import { createClient } from '@/lib/supabase/server';
 import { sumitConfigured } from '@/lib/sumit';
@@ -50,7 +51,7 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
     ? {
       id: 0, first_name: '', last_name: '', school: '', birth_date: null, birth_date_approx: false, branch_id: null,
       requested_instrument_id: null, second_instrument_id: null, notes: '', status: 'active', waiting_reason: '', gender: null, health_fund: null, health_plan: '',
-      id_number: '', three_digits: '', has_referral: false, hmo_reported: false, preferred_times: '', language: DEFAULT_LANGUAGE,
+      id_number: '', three_digits: '', has_referral: false, referral_name: '', referral_id_number: '', hmo_reported: false, preferred_times: '', language: DEFAULT_LANGUAGE,
       contract_signed: false, card_on_file: false, email: '', no_email: false, family_id: null,
       payment_track: 'unknown', standing_order: false, needs_review: false,
     }
@@ -79,7 +80,8 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
         {!isNew && <InquiryButton studentId={s.id} name={fullName(s)} />}
         {!isNew && (
           <ReceiptButton
-            studentId={s.id} name={fullName(s)} email={studentEmail(s)} days={receiptDays} gender={s.gender}
+            studentId={s.id} name={fullName(s)} idNumber={s.id_number} referral={referralHolder(s)}
+            email={studentEmail(s)} days={receiptDays} gender={s.gender}
             attended={attendedDates(history!.lessons, history!.closures)} price={Number(loadedBilling!.settings.price_maccabi_full)}
           />
         )}
@@ -138,6 +140,8 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
           </label>
           <HealthFundFields fund={s.health_fund} plan={s.health_plan} />
           <label className="check"><input type="checkbox" name="has_referral" defaultChecked={s.has_referral} /> יש הפניה</label>
+          <label>שם על ההפניה<input name="referral_name" defaultValue={s.referral_name ?? ''} placeholder="אם שונה מהשם של התלמיד/ה" /></label>
+          <label>ת&quot;ז על ההפניה<input name="referral_id_number" defaultValue={s.referral_id_number ?? ''} dir="ltr" inputMode="numeric" /></label>
           <label className="check"><input type="checkbox" name="hmo_reported" defaultChecked={s.hmo_reported} /> עודכן/ה בקופה</label>
           <PaymentTrackField track={s.payment_track} existing={!isNew} />
           <label className="check"><input type="checkbox" name="standing_order" defaultChecked={s.standing_order} /> הוראת קבע</label>

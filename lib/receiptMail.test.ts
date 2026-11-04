@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { receiptMail, receiptMonths } from './receiptMail';
+import { receiptMail, receiptMonths, referralHolder } from './receiptMail';
+
+describe('referralHolder', () => {
+  it('רק כששם ות"ז מולאו שניהם', () => {
+    expect(referralHolder({ referral_name: ' דנה כהן ', referral_id_number: ' 123456782 ' })).toEqual({ name: 'דנה כהן', idNumber: '123456782' });
+    expect(referralHolder({ referral_name: 'דנה כהן', referral_id_number: '' })).toBeNull();
+    expect(referralHolder({ referral_name: '', referral_id_number: '123456782' })).toBeNull();
+  });
+
+  it('לפני 0056 השדות לא קיימים', () => {
+    expect(referralHolder({} as Parameters<typeof referralHolder>[0])).toBeNull();
+  });
+});
 
 describe('receiptMonths', () => {
   it('one month, several in a year, across years', () => {

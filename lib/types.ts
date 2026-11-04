@@ -47,6 +47,8 @@ export type Student = {
   second_instrument_id: number | null; notes: string; status: StudentStatus; waiting_reason: string;
   gender: Gender | null; health_fund: HealthFund | null; health_plan: string; id_number: string; three_digits: string;
   has_referral: boolean; hmo_reported: boolean; preferred_times: string; language: string;
+  /** השם ות"ז שעל ההפניה, כשהם שונים מהפרטים של התלמיד/ה. אפשר לבחור בהם באישור הקבלה למכבי */
+  referral_name: string; referral_id_number: string;
   /** חתמו על חוזה / נלקחו פרטי אשראי */
   contract_signed: boolean; card_on_file: boolean;
   /** מייל, או no_email = אין להם מייל */

@@ -13,10 +13,13 @@ import { receiptMail } from '@/lib/receiptMail';
  * בשני המצבים בוחרים את התחום שייכתב: "הבעה ויצירה" או "אומנות".
  * ידני: סכום, ימי פעילות ומספר פעילויות. התאריכים מחושבים מהם, ואפשר להסיר ולהוסיף כל תאריך.
  * כל קבלה שנוצרת נשמרת (בדף "אישורי קבלה" ובכרטיס התלמיד/ה) כדי שאפשר יהיה להוריד אותה שוב.
- * יש מייל תקין בכרטיס: אפשר לשלוח את הקבלה במייל כבר בהפקה, עם נושא וגוף מוצעים שאפשר לערוך
+ * יש מייל תקין בכרטיס: אפשר לשלוח את הקבלה במייל כבר בהפקה, עם נושא וגוף מוצעים שאפשר לערוך.
+ * יש בכרטיס שם ות"ז על ההפניה: בוחרים על שם מי האישור
  */
-export function ReceiptButton({ studentId, name, email, days, gender, attended, price }: {
-  studentId: number; name: string;
+export function ReceiptButton({ studentId, name, idNumber, referral, email, days, gender, attended, price }: {
+  studentId: number; name: string; idNumber: string;
+  /** השם ות"ז שעל ההפניה. null = לא מולאו, והאישור על שם התלמיד/ה */
+  referral: { name: string; idNumber: string } | null;
   /** המייל התקין של התלמיד/ה, ריק = אין שליחה במייל */
   email: string;
   days: number[]; gender: Gender | null;
@@ -35,6 +38,7 @@ export function ReceiptButton({ studentId, name, email, days, gender, attended, 
   const [extra, setExtra] = useState('');
   const [range, setRange] = useState({ from: `${today.slice(0, 7)}-01`, to: today });
   const [field, setField] = useState<ReceiptField>('expression');
+  const [onReferral, setOnReferral] = useState(false);
   const [send, setSend] = useState(false);
   // null = הנוסח המוצע (מתעדכן לפי התאריכים), אחרי עריכה - מה שנכתב
   const [subject, setSubject] = useState<string | null>(null);
@@ -42,7 +46,7 @@ export function ReceiptButton({ studentId, name, email, days, gender, attended, 
   const router = useRouter();
 
   const lessonDates = attended.filter((d) => d >= range.from && d <= range.to);
-  const suggested = receiptMail({ name, dates: mode === 'lessons' ? lessonDates : dates, field });
+  const suggested = receiptMail({ name: onReferral && referral ? referral.name : name, dates: mode === 'lessons' ? lessonDates : dates, field });
 
   const mailFields = email && (
     <fieldset className="receipt-mail">
@@ -91,6 +95,15 @@ export function ReceiptButton({ studentId, name, email, days, gender, attended, 
               {Object.entries(RECEIPT_FIELD_LABELS).map(([k, v]) => <option key={k} value={k}>טיפולים ב{v}</option>)}
             </select>
           </label>
+          {referral && (
+            <label className="receipt-field">
+              על שם מי האישור
+              <select name="on_referral" value={onReferral ? '1' : ''} onChange={(e) => setOnReferral(e.target.value === '1')}>
+                <option value="">{name}{idNumber.trim() && `, ת"ז ${idNumber.trim()}`}</option>
+                <option value="1">{referral.name}, ת&quot;ז {referral.idNumber} (מההפניה)</option>
+              </select>
+            </label>
+          )}
           {!gender && <p className="muted">לא נבחר מין בכרטיס: הנוסח יהיה &quot;הילד/ה ... קיבל/ה&quot;</p>}
 
           {mode === 'lessons' ? (
