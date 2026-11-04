@@ -92,14 +92,15 @@ export default async function FinancePage({ searchParams }: { searchParams: SP }
           {otherIncome > 0 && <div className="muted">כולל {shekel(otherIncome)} מניסיון, מסלול לא ידוע ורישום ידני</div>}
           {sum.refunds > 0 && <div className="fin-track-row muted"><span>הוחזר להורים</span><span>{shekel(sum.refunds)}</span></div>}
           <div className="fin-track-row"><span>שכר מורים ששולם</span><strong className="fin-neg">{shekel(sum.teachers)}</strong></div>
-          <div className="muted">מתוך {shekel(pay.left.total)} על החודש. נותר לשלם {shekel(pay.left.remaining)}</div>
+          <div className="fin-track-row"><span>נותר לשלם למורים</span><strong className="fin-neg">{shekel(pay.left.remaining)}</strong></div>
           <div className="fin-track-row"><span>הוצאות קבועות</span><strong className="fin-neg">{shekel(sum.fixed)}</strong></div>
           <div className="fin-track-row"><span>הוצאות משתנות</span><strong className="fin-neg">{shekel(sum.variable)}</strong></div>
-          <div className="fin-track-row"><span>סה&quot;כ הוצאות (כולל שכר)</span><strong className="fin-neg">{shekel(sum.expenses)}</strong></div>
+          <div className="fin-track-row"><span>סה&quot;כ הוצאות (כולל שכר שנותר לשלם)</span><strong className="fin-neg">{shekel(sum.expenses + pay.left.remaining)}</strong></div>
           <div className="fin-track-row fin-track-net">
             <span>{sum.operating < 0 ? 'הפסד מהפעילות' : 'רווח מהפעילות'}</span>
             <strong className={sum.operating < 0 ? 'fin-neg' : 'fin-track-in'}>{shekel(Math.abs(sum.operating))}</strong>
           </div>
+          {pay.left.remaining > 0 && <div className="muted">לפי מה ששולם, בלי השכר שנותר לשלם</div>}
           <div className="fin-track-row"><span>השקעות בעסק</span><strong>{shekel(sum.investment)}</strong></div>
           <div className="fin-track-row muted"><span>נשאר אחרי השקעות</span><span>{shekel(sum.afterInvestment)}</span></div>
           <div className="fin-track-row"><span>{debtLabel}</span><strong>{shekel(totalDebt)}</strong></div>
