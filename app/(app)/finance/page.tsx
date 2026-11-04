@@ -57,6 +57,8 @@ export default async function FinancePage({ searchParams }: { searchParams: SP }
   const year = yearTable(entries, y);
   const paidNow = paidToTeachers(entries, month);
   const pay = await monthPayroll(db, all.teachers, month.slice(0, 7), today);
+  // הרווח של החודש: אחרי כל שכר החודש, גם מה שעוד לא שולם
+  const operating = sum.operating - pay.left.remaining;
 
   const canCopy = transactions.some((t) => t.recurring && inMonth(t.occurred_on, prevMonth));
 
@@ -97,12 +99,12 @@ export default async function FinancePage({ searchParams }: { searchParams: SP }
           <div className="fin-track-row"><span>הוצאות משתנות</span><strong className="fin-neg">{shekel(sum.variable)}</strong></div>
           <div className="fin-track-row"><span>סה&quot;כ הוצאות (כולל שכר שנותר לשלם)</span><strong className="fin-neg">{shekel(sum.expenses + pay.left.remaining)}</strong></div>
           <div className="fin-track-row fin-track-net">
-            <span>{sum.operating < 0 ? 'הפסד מהפעילות' : 'רווח מהפעילות'}</span>
-            <strong className={sum.operating < 0 ? 'fin-neg' : 'fin-track-in'}>{shekel(Math.abs(sum.operating))}</strong>
+            <span>{operating < 0 ? 'הפסד מהפעילות' : 'רווח מהפעילות'}</span>
+            <strong className={operating < 0 ? 'fin-neg' : 'fin-track-in'}>{shekel(Math.abs(operating))}</strong>
           </div>
-          {pay.left.remaining > 0 && <div className="muted">לפי מה ששולם, בלי השכר שנותר לשלם</div>}
+          {pay.left.remaining > 0 && <div className="muted">כולל השכר שנותר לשלם</div>}
           <div className="fin-track-row"><span>השקעות בעסק</span><strong>{shekel(sum.investment)}</strong></div>
-          <div className="fin-track-row muted"><span>נשאר אחרי השקעות</span><span>{shekel(sum.afterInvestment)}</span></div>
+          <div className="fin-track-row muted"><span>נשאר אחרי השקעות</span><span>{shekel(sum.afterInvestment - pay.left.remaining)}</span></div>
           <div className="fin-track-row"><span>{debtLabel}</span><strong>{shekel(totalDebt)}</strong></div>
           {tracks.other.debt > 0 && <div className="muted">כולל {shekel(tracks.other.debt)} מניסיון ומסלול לא ידוע</div>}
           <div className="fin-track-row"><span>עתידי ממכבי</span><strong>{shekel(maccabiUpcoming)}</strong></div>
@@ -110,7 +112,7 @@ export default async function FinancePage({ searchParams }: { searchParams: SP }
             <span>סה&quot;כ הכנסות כולל חייבים ועתידי</span>
             <strong className="fin-track-in">{shekel(sum.income - sum.refunds + totalDebt + maccabiUpcoming)}</strong>
           </div>
-          <div className="fin-track-row muted"><span>מתחילת {y}, לפני השקעות</span><span>{yearSum.operating < 0 ? 'הפסד' : 'רווח'} {shekel(Math.abs(yearSum.operating))}</span></div>
+          <div className="fin-track-row muted"><span>מתחילת {y}, לפי שכר ששולם, לפני השקעות</span><span>{yearSum.operating < 0 ? 'הפסד' : 'רווח'} {shekel(Math.abs(yearSum.operating))}</span></div>
         </section>
       </div>
 
@@ -198,7 +200,7 @@ export default async function FinancePage({ searchParams }: { searchParams: SP }
             {pay.left.gap > 0 && <div className="muted">ועוד {shekel(pay.left.gap)} הפרש אצל מי ששולם</div>}
             {Math.round(sum.teachers) !== Math.round(pay.left.paid) && <div className="muted">ביומן נרשם שכר של {shekel(sum.teachers)} על החודש הזה</div>}
             <p className="muted">
-              רק מה ששולם יורד מהרווח של {monthLabel(month)}, גם אם שולם בחודש אחר. הסכום מחושב לפי השעות בימים שנסגרו, אז הוא יכול לעלות כשנסגרים עוד ימים.
+              כל השכר יורד מהרווח של {monthLabel(month)}, גם מה שעוד לא שולם או ששולם בחודש אחר. הסכום מחושב לפי השעות בימים שנסגרו, אז הוא יכול לעלות כשנסגרים עוד ימים.
             </p>
             <Link className="btn btn-primary" href={`/payroll?month=${month.slice(0, 7)}`}>לשכר מורים של {monthLabel(month)}</Link>
           </div>
