@@ -3,7 +3,7 @@ import { ageFrom } from '@/lib/age';
 import { GENDER_LABELS, HEALTH_FUND_LABELS, STUDENT_STATUS_LABELS } from '@/lib/constants';
 import { loadAll } from '@/lib/data';
 import { xlsxResponse, yesNo } from '@/lib/export';
-import { filterFundStudents, fundFilters, ID_STATE_LABELS, idState } from '@/lib/funds';
+import { filterFundStudents, fundFilters, fundIdNumber, fundPersonName, ID_STATE_LABELS, idState, sendsReferralId } from '@/lib/funds';
 import { createClient } from '@/lib/supabase/server';
 import { fullName, lessonWhen, type Student } from '@/lib/types';
 
@@ -25,7 +25,8 @@ export async function GET(req: NextRequest) {
   return xlsxResponse<Student>(name, [
     { header: 'שם פרטי', value: (s) => s.first_name },
     { header: 'שם משפחה', value: (s) => s.last_name },
-    { header: 'ת"ז', width: 13, value: (s) => s.id_number },
+    { header: 'שם על ההפניה', value: (s) => (sendsReferralId(s) ? fundPersonName(s) : '') },
+    { header: 'ת"ז', width: 13, value: (s) => fundIdNumber(s) },
     { header: 'תקינות ת"ז', width: 14, value: (s) => ID_STATE_LABELS[idState(s)] },
     { header: 'תאריך לידה', width: 13, value: (s) => (s.birth_date && !s.birth_date_approx ? s.birth_date : '') },
     { header: 'גיל', width: 8, value: (s) => (s.birth_date ? ageFrom(s.birth_date) : null) },

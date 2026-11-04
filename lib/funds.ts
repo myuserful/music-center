@@ -1,5 +1,6 @@
 import { HEALTH_FUND_LABELS, type HealthFund, type StudentStatus } from './constants';
 import type { All } from './data';
+import { referralHolder } from './receiptMail';
 import { fullName, type Student } from './types';
 
 type Params = Record<string, string | string[] | undefined>;
@@ -21,8 +22,25 @@ export function validIsraeliId(raw: string): boolean {
   return sum % 10 === 0;
 }
 
-export const idState = (s: Pick<Student, 'id_number'>): IdState =>
-  !s.id_number.trim() ? 'missing' : validIsraeliId(s.id_number) ? 'ok' : 'invalid';
+type IdFields = Pick<Student, 'id_number'> & Partial<Pick<Student, 'health_fund' | 'referral_name' | 'referral_id_number'>>;
+
+/** במכבי, כשמולאו שם ות"ז על ההפניה: הם מה שנשלח לקופה במקום הפרטים של התלמיד/ה */
+const maccabiReferral = (s: IdFields) => (s.health_fund === 'maccabi'
+  ? referralHolder({ referral_name: s.referral_name ?? '', referral_id_number: s.referral_id_number ?? '' })
+  : null);
+
+/** הת"ז שנשלחת לקופה */
+export const fundIdNumber = (s: IdFields) => maccabiReferral(s)?.idNumber ?? s.id_number;
+/** השם שנשלח לקופה: השם שעל ההפניה, או השם הפרטי של התלמיד/ה */
+export const fundPersonName = (s: IdFields & Pick<Student, 'first_name'>) => maccabiReferral(s)?.name ?? s.first_name;
+/** הת"ז שנשלחת לקופה היא זו שעל ההפניה */
+export const sendsReferralId = (s: IdFields) => maccabiReferral(s) !== null;
+
+/** מצב הת"ז שנשלחת לקופה */
+export const idState = (s: IdFields): IdState => {
+  const id = fundIdNumber(s);
+  return !id.trim() ? 'missing' : validIsraeliId(id) ? 'ok' : 'invalid';
+};
 
 /** מוכן/ה לשליחה לקופה: יש קופה (לא פרטי), יש הפניה, ת"ז תקינה ועוד לא נשלח */
 export const readyToSend = (s: Student) =>

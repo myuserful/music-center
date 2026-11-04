@@ -7,7 +7,7 @@ import { ageLabel } from '@/lib/age';
 import { HEALTH_FUND_LABELS, STUDENT_STATUS_LABELS, STUDENT_STATUSES, type HealthFund } from '@/lib/constants';
 import { loadAll } from '@/lib/data';
 import { queryString } from '@/lib/filters';
-import { filterFundStudents, fundFilters, ID_STATE_LABELS, idState, readyToSend } from '@/lib/funds';
+import { filterFundStudents, fundFilters, fundIdNumber, fundPersonName, ID_STATE_LABELS, idState, readyToSend, sendsReferralId } from '@/lib/funds';
 import { createClient } from '@/lib/supabase/server';
 import { fullName, type Student } from '@/lib/types';
 
@@ -260,7 +260,8 @@ export default async function FundsPage({ searchParams }: { searchParams: SP }) 
                     <tr key={s.id} className={s.status === 'inactive' ? 'inactive' : ''}>
                       <td><Link href={`/students/${s.id}`}><strong>{fullName(s) || '(ללא שם)'}</strong></Link></td>
                       <td>
-                        {s.id_number && <span dir="ltr">{s.id_number}</span>}
+                        {fundIdNumber(s) && <span dir="ltr">{fundIdNumber(s)}</span>}
+                        {sendsReferralId(s) && <div className="muted">מההפניה: {fundPersonName(s)}</div>}
                         {ids !== 'ok' && <> <span className={`badge ${ids === 'missing' ? 'badge-muted' : 'badge-pending'}`}>{ID_STATE_LABELS[ids]}</span></>}
                       </td>
                       <td title={s.birth_date_approx ? 'גיל משוער' : undefined}>{ageLabel(s.birth_date, s.birth_date_approx)}</td>
