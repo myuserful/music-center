@@ -1,4 +1,5 @@
-import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, TX_METHOD_LABELS, TX_METHODS, type TxKind } from '@/lib/constants';
+import { EXPENSE_CATEGORIES, EXPENSE_GROUP_LABELS, INCOME_CATEGORIES, TX_METHOD_LABELS, TX_METHODS, type TxKind } from '@/lib/constants';
+import { expenseGroup } from '@/lib/finance';
 import { RECEIPT_ACCEPT } from '@/lib/receiptFile';
 import type { Teacher, Transaction } from '@/lib/types';
 import { fullName } from '@/lib/types';
@@ -17,7 +18,10 @@ export function TransactionFields({
       <label>
         קטגוריה
         <input name="category" list={list} defaultValue={tx?.category} placeholder="בחירה או הקלדה" required />
-        <datalist id={list}>{categories.map((c) => <option key={c} value={c} />)}</datalist>
+        <datalist id={list}>
+          {categories.map((c) => <option key={c} value={c} label={kind === 'expense' ? EXPENSE_GROUP_LABELS[expenseGroup(c)] : undefined} />)}
+        </datalist>
+        {kind === 'expense' && <small className="muted">קטגוריה חדשה נספרת כהוצאה משתנה, או כקבועה אם מסומן &quot;קבוע כל חודש&quot;</small>}
       </label>
       <label>
         {kind === 'income' ? 'ממי' : 'למי (ספק / נותן שירות)'}

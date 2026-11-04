@@ -89,7 +89,15 @@ export type Transaction = {
   id: number; kind: TxKind; occurred_on: string; amount: number; category: string; counterparty: string;
   teacher_id: number | null; method: TxMethod; reference: string; recurring: boolean; notes: string;
   receipt_path: string | null; receipt_name: string;
+  /** נרשם אוטומטית מהוצאה קבועה (לפני 0058: חסר) */
+  recurring_id?: number | null;
 };
+/** הוצאה קבועה: נרשמת לבד בכל חודש. start_month / end_month בפורמט YYYY-MM-01 */
+export type RecurringExpense = {
+  id: number; category: string; counterparty: string; amount: number; day_of_month: number; method: TxMethod;
+  notes: string; start_month: string; end_month: string | null;
+};
+export type RecurringRun = { recurring_id: number; month: string; transaction_id?: number | null };
 
 export type BillingSettings = {
   price_private: number; price_maccabi_full: number; price_maccabi_upfront: number; price_maccabi_later: number;

@@ -2,6 +2,7 @@
 
 import { TX_METHODS, type TxKind } from '../constants';
 import { RECEIPT_BUCKET as BUCKET, receiptFile, uploadReceipt } from '../receiptFile';
+import { isMissing, occurrenceDate, RECURRING_MISSING } from '../recurring';
 import { createClient } from '../supabase/server';
 import { backTo, dbMessage, done, fail, num, oneOf, str } from './util';
 
@@ -66,6 +67,54 @@ export async function deleteTransaction(fd: FormData) {
   if (error) fail(back, dbMessage(error));
   if (old?.receipt_path) await db.storage.from(BUCKET).remove([old.receipt_path]);
   done(back, 'נמחק');
+}
+
+const RECURRING = `${HOME}/recurring`;
+const monthInput = (v: string) => (/^\d{4}-\d{2}$/.test(v) ? `${v}-01` : null);
+
+/** הוצאה קבועה חדשה, או עדכון (כשיש id). עדכון חל גם על הרישום של החודש הנוכחי, אם כבר נוצר. חודשים קודמים לא משתנים */
+export async function saveRecurring(fd: FormData) {
+  const db = await createClient();
+  const id = num(fd, 'id');
+  const row = {
+    category: str(fd, 'category'),
+    counterparty: str(fd, 'counterparty'),
+    amount: num(fd, 'amount'),
+    day_of_month: num(fd, 'day_of_month') ?? 1,
+    method: oneOf(str(fd, 'method'), TX_METHODS) ?? 'bank_transfer',
+    notes: str(fd, 'notes'),
+    start_month: monthInput(str(fd, 'start_month')),
+    end_month: monthInput(str(fd, 'end_month')),
+  };
+  if (!row.category) fail(RECURRING, 'יש לבחור קטגוריה');
+  if (!row.amount || row.amount <= 0) fail(RECURRING, 'יש למלא סכום גדול מאפס');
+  if (!Number.isInteger(row.day_of_month) || row.day_of_month < 1 || row.day_of_month > 31) fail(RECURRING, 'יום בחודש צריך להיות בין 1 ל-31');
+  if (!row.start_month) fail(RECURRING, 'יש לבחור מאיזה חודש');
+  if (row.end_month && row.end_month < row.start_month!) fail(RECURRING, 'חודש הסיום לפני חודש ההתחלה');
+
+  const { error } = id
+    ? await db.from('recurring_expenses').update(row).eq('id', id)
+    : await db.from('recurring_expenses').insert(row);
+  if (error) fail(RECURRING, isMissing(error) ? RECURRING_MISSING : dbMessage(error));
+
+  if (id) {
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
+    const month = `${today.slice(0, 7)}-01`;
+    const { error: e2 } = await db.from('transactions').update({
+      amount: row.amount, category: row.category, counterparty: row.counterparty, method: row.method,
+      notes: row.notes, occurred_on: occurrenceDate(month, row.day_of_month),
+    }).eq('recurring_id', id).gte('occurred_on', month).lte('occurred_on', occurrenceDate(month, 31));
+    if (e2) fail(RECURRING, dbMessage(e2));
+  }
+  done(RECURRING, id ? 'ההוצאה הקבועה עודכנה' : 'ההוצאה הקבועה נוספה');
+}
+
+/** מחיקת הוצאה קבועה: לא תירשם יותר. מה שכבר נרשם בחודשים קודמים נשאר */
+export async function deleteRecurring(fd: FormData) {
+  const db = await createClient();
+  const { error } = await db.from('recurring_expenses').delete().eq('id', num(fd, 'id')!);
+  if (error) fail(RECURRING, dbMessage(error));
+  done(RECURRING, 'ההוצאה הקבועה נמחקה. מה שכבר נרשם נשאר ביומן');
 }
 
 /** מעתיק לחודש הנוכחי את הרישומים הקבועים מהחודש הקודם (שכירות, ביטוח...). מה שכבר הועתק לא מוכפל */

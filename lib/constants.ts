@@ -163,11 +163,18 @@ export const TX_METHOD_LABELS: Record<TxMethod, string> = {
 };
 
 export const SALARY_CATEGORY = 'שכר מורים';
-/** הצעות לקטגוריה. אפשר גם להקליד ערך אחר */
-export const EXPENSE_CATEGORIES = [
-  SALARY_CATEGORY, 'שכירות', 'חשמל ומים', 'ארנונה', 'ציוד וכלי נגינה', 'תיקונים ותחזוקה', 'פרסום',
-  'ביטוח', 'הנהלת חשבונות', 'עמלות בנק וסליקה', 'תוכנות ואינטרנט', 'טלפון', 'משרד', 'אירועים וכיבוד', 'מיסים', 'אחר',
+/** שכר מורים בנפרד. קבועות: חוזרות כל חודש. משתנות: כל חודש, בסכום לא קבוע. השקעה בעסק: חד-פעמי, לא נכנס לרווח מהפעילות */
+export type ExpenseGroup = 'teachers' | 'fixed' | 'variable' | 'investment';
+export const EXPENSE_GROUP_LABELS: Record<ExpenseGroup, string> = {
+  teachers: SALARY_CATEGORY, fixed: 'הוצאה קבועה', variable: 'הוצאה משתנה', investment: 'השקעה בעסק',
+};
+export const FIXED_EXPENSES = [
+  'שכירות', 'תשלום להודיה', 'חשמל ומים', 'ארנונה', 'ביטוח', 'הנהלת חשבונות', 'תוכנות ואינטרנט', 'טלפון', 'מיסים',
 ];
+export const VARIABLE_EXPENSES = ['כיבוד', 'הדפסות', 'משרד', 'תיקונים ותחזוקה', 'פרסום', 'אירועים', 'עמלות בנק וסליקה', 'אחר'];
+export const INVESTMENT_EXPENSES = ['ציוד וכלי נגינה', 'ריהוט', 'שיפוץ והתקנות', 'השקעה אחרת'];
+/** הצעות לקטגוריה. אפשר גם להקליד ערך אחר */
+export const EXPENSE_CATEGORIES = [SALARY_CATEGORY, ...FIXED_EXPENSES, ...VARIABLE_EXPENSES, ...INVESTMENT_EXPENSES];
 export const INCOME_CATEGORIES = ['תרומה', 'מענק / תמיכה', 'הופעות ואירועים', 'השכרת חדרים', 'דמי רישום', 'מכירות', 'אחר'];
 /** קטגוריות של הכנסות שנספרות אוטומטית */
 export const PARENTS_INCOME = 'שכר לימוד - הורים';

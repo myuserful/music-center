@@ -1,8 +1,9 @@
 import type { NextRequest } from 'next/server';
-import { TX_KIND_LABELS } from '@/lib/constants';
+import { EXPENSE_GROUP_LABELS, TX_KIND_LABELS } from '@/lib/constants';
 import { loadBilling, loadStudentNames } from '@/lib/data';
 import { xlsxResponse } from '@/lib/export';
 import { buildEntries, type Entry } from '@/lib/finance';
+import { ensureRecurring } from '@/lib/recurring';
 import { createClient } from '@/lib/supabase/server';
 import { fullName, type Transaction } from '@/lib/types';
 
@@ -12,6 +13,7 @@ export async function GET(req: NextRequest) {
   const year = /^\d{4}$/.test(req.nextUrl.searchParams.get('year') ?? '')
     ? req.nextUrl.searchParams.get('year')!
     : new Date().toISOString().slice(0, 4);
+  await ensureRecurring(db, new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' }));
   const [students, billing, { data, error }] = await Promise.all([
     loadStudentNames(db), loadBilling(db), db.from('transactions').select('*'),
   ]);
@@ -27,6 +29,7 @@ export async function GET(req: NextRequest) {
     { header: 'תאריך', width: 12, value: (e) => e.date.split('-').reverse().join('/') },
     { header: 'סוג', width: 9, value: (e) => TX_KIND_LABELS[e.kind] },
     { header: 'קטגוריה', width: 20, value: (e) => e.category },
+    { header: 'סוג הוצאה', width: 14, value: (e) => (e.group ? EXPENSE_GROUP_LABELS[e.group] : '') },
     { header: 'ממי / למי', width: 22, value: (e) => e.label },
     { header: 'אמצעי תשלום', width: 14, value: (e) => e.method },
     { header: 'אסמכתא', width: 14, value: (e) => tx(e)?.reference ?? '' },

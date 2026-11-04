@@ -739,6 +739,29 @@ tr.inactive td { opacity: 0.5; }
 .fin-paid { color: var(--confirmed); }
 .fin-neg { color: var(--danger); font-weight: 600; }
 .fin-current td { background: var(--brand-soft); }
+.fin-track { display: flex; flex-direction: column; gap: 8px; margin: 0; }
+.fin-track h2 { margin: 0 0 4px; }
+.fin-track .muted { font-size: 0.8rem; }
+.fin-track-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.fin-track-row strong { font-size: 1.15rem; white-space: nowrap; }
+.fin-track-in { color: var(--mint-dark); }
+.fin-track-total { display: block; grid-column: 1 / -1; background: var(--brand-soft); columns: 3 220px; column-gap: 32px; }
+.fin-track-total h2 { column-span: all; margin-bottom: 10px; }
+.fin-track-total > div { break-inside: avoid; margin-bottom: 8px; }
+.fin-track-net { padding-block: 6px; border-block: 1px solid var(--line); }
+.rec-list { display: flex; flex-direction: column; }
+.rec-item { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.rec-item > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; cursor: pointer; list-style: none; }
+.rec-item > summary::-webkit-details-marker { display: none; }
+.rec-item > summary > :last-child { margin-inline-start: auto; }
+.rec-item[open] > form { margin-top: 14px; }
+.fin-year { font-size: 0.85rem; }
+.fin-year th, .fin-year td { padding: 7px 8px; white-space: nowrap; text-align: start; }
+.fin-year td:first-child { position: sticky; inset-inline-start: 0; background: var(--card, #fff); }
+.fin-year .fin-sec td { font-weight: 700; padding-top: 14px; border-bottom: 2px solid var(--line); }
+.fin-year .fin-sub td { font-weight: 600; color: var(--muted); }
+.fin-year .fin-result td { font-weight: 700; background: var(--brand-soft); }
+.fin-year .fin-current-cell { background: var(--brand-soft); }
 .fin-receipt { display: flex; flex-direction: column; gap: 6px; }
 .fin-receipt input[type="file"] { padding: 8px; border: 1px dashed var(--line); border-radius: var(--radius-sm); background: var(--bg); }
 .fin-receipt-current { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }

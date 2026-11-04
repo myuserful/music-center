@@ -55,9 +55,9 @@ export async function loadTables<K extends keyof Tables>(db: DB, ...tables: K[])
 
 /** שמות התלמידים בלבד (רוב המשקל של הנתונים הוא שאר הפרטים של התלמידים) */
 export async function loadStudentNames(db: DB) {
-  const { data, error } = await db.from('students').select('id, first_name, last_name');
+  const { data, error } = await db.from('students').select('id, first_name, last_name, payment_track');
   if (error) throw new Error(error.message);
-  return byId(data as { id: number; first_name: string; last_name: string }[]);
+  return byId(data as Pick<Student, 'id' | 'first_name' | 'last_name' | 'payment_track'>[]);
 }
 
 /** כל הטבלאות בקריאה אחת (פונקציה app_data במסד, 0025). אם עוד לא הורצה - 12 קריאות נפרדות */
