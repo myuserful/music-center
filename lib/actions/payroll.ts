@@ -39,7 +39,33 @@ export async function deleteTeacherExtra(fd: FormData) {
   done(back, 'התוספת נמחקה');
 }
 
-/** אישור ותשלום שכר החודש: נרשם כהוצאה (שכר מורים) ב"הכנסות והוצאות", והחודש מסומן כשולם. אפשר לצרף אסמכתא להעברה */
+type UploadedFiles = { fields: { receipt_path?: string; receipt_name?: string; proof_path?: string; proof_name?: string }; paths: string[] };
+
+/** מעלה את הקבלה ואת קובץ האסמכתא שנבחרו בטופס. עוצר בהודעה אם קובץ לא תקין או שההעלאה נכשלה */
+async function uploadPayFiles(db: Awaited<ReturnType<typeof createClient>>, fd: FormData, back: string, date: string): Promise<UploadedFiles> {
+  const receipt = receiptFile(fd);
+  const proof = receiptFile(fd, 'proof');
+  if (typeof receipt === 'string') fail(back, receipt);
+  if (typeof proof === 'string') fail(back, proof);
+  const out: UploadedFiles = { fields: {}, paths: [] };
+  for (const [file, label, key] of [[receipt, 'הקבלה', 'receipt'], [proof, 'האסמכתא', 'proof']] as const) {
+    if (!(file instanceof File)) continue;
+    const up = await uploadReceipt(db, file, date);
+    if ('error' in up) {
+      if (out.paths.length) await db.storage.from(RECEIPT_BUCKET).remove(out.paths);
+      fail(back, `העלאת ${label} נכשלה: ${up.error}`);
+    }
+    const path = (up as { path: string }).path;
+    out.paths.push(path);
+    out.fields[`${key}_path`] = path;
+    out.fields[`${key}_name`] = file.name;
+  }
+  return out;
+}
+
+const MISSING_PROOF = 'צריך להריץ את 0060_transaction_proof.sql ב-Supabase כדי לשמור קובץ אסמכתא';
+
+/** אישור ותשלום שכר החודש: נרשם כהוצאה (שכר מורים) ב"הכנסות והוצאות", והחודש מסומן כשולם. קבלה ואסמכתא מצרפים כאן או אחרי התשלום. בלי קבלה: "חסרה קבלה" */
 export async function approvePayroll(fd: FormData) {
   const db = await createClient();
   const back = backTo(fd, HOME);
@@ -48,19 +74,12 @@ export async function approvePayroll(fd: FormData) {
   const amount = num(fd, 'amount');
   if (!teacherId || !/^\d{4}-\d{2}$/.test(month)) fail(back, 'מורה או חודש לא תקינים');
   if (!amount || amount <= 0) fail(back, 'יש למלא סכום');
-  const file = receiptFile(fd);
-  if (typeof file === 'string') fail(back, file);
   const { data: t } = await db.from('teachers').select('first_name, last_name').eq('id', teacherId!).single();
   const occurredOn = str(fd, 'paid_on') || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
 
-  let proofPath: string | null = null;
-  if (file instanceof File) {
-    const up = await uploadReceipt(db, file, occurredOn);
-    if ('error' in up) fail(back, `העלאת האסמכתא נכשלה: ${up.error}`);
-    proofPath = (up as { path: string }).path;
-  }
-  const dropProof = async () => {
-    if (proofPath) await db.storage.from(RECEIPT_BUCKET).remove([proofPath]);
+  const { fields, paths } = await uploadPayFiles(db, fd, back, occurredOn);
+  const dropFiles = async () => {
+    if (paths.length) await db.storage.from(RECEIPT_BUCKET).remove(paths);
   };
 
   const { data: tx, error } = await db.from('transactions').insert({
@@ -68,12 +87,12 @@ export async function approvePayroll(fd: FormData) {
     occurred_on: occurredOn,
     amount, method: oneOf(str(fd, 'method'), TX_METHODS) ?? 'bank_transfer',
     reference: str(fd, 'reference'),
-    receipt_path: proofPath, receipt_name: file instanceof File ? file.name : '',
+    ...fields,
     notes: `שכר ${monthLabel(`${month}-01`)}`,
   }).select('id, occurred_on').single();
   if (error || !tx) {
-    await dropProof();
-    fail(back, dbMessage(error!));
+    await dropFiles();
+    fail(back, error?.code === 'PGRST204' ? MISSING_PROOF : dbMessage(error!));
   }
 
   const { error: pe } = await db.from('teacher_payroll').insert({
@@ -82,42 +101,36 @@ export async function approvePayroll(fd: FormData) {
   });
   if (pe) {
     await db.from('transactions').delete().eq('id', tx!.id);
-    await dropProof();
+    await dropFiles();
     fail(back, missing(pe.code) ? MISSING : pe.code === '23505' ? 'השכר של החודש הזה כבר אושר' : dbMessage(pe));
   }
-  done(back, `השכר של ${fullName(t)} ל${monthLabel(`${month}-01`)} אושר ונרשם כהוצאה`);
+  done(back, `השכר של ${fullName(t)} ל${monthLabel(`${month}-01`)} אושר ונרשם כהוצאה.${fields.receipt_path ? '' : ' חסרה קבלה: צריך לצרף אותה לתשלום'}`);
 }
 
-/** צירוף או החלפה של אסמכתא לשכר שכבר אושר (למשל כשההעברה בוצעה אחרי האישור) */
+/** צירוף או החלפה של קבלה ואסמכתא לשכר ששולם. הן מקושרות להוצאה ב"הכנסות והוצאות" */
 export async function attachPayrollProof(fd: FormData) {
   const db = await createClient();
   const back = backTo(fd, HOME);
-  const file = receiptFile(fd);
-  if (typeof file === 'string') fail(back, file);
   const reference = str(fd, 'reference');
-  if (!file && !reference) fail(back, 'יש לבחור קובץ או לכתוב מספר אסמכתא');
 
   const { data: p } = await db.from('teacher_payroll').select('transaction_id, paid_on')
     .eq('teacher_id', num(fd, 'teacher_id')!).eq('month', `${str(fd, 'month').slice(0, 7)}-01`).single();
   if (!p?.transaction_id) fail(back, 'לא נמצאה ההוצאה של השכר הזה');
-  const { data: old } = await db.from('transactions').select('receipt_path').eq('id', p!.transaction_id).single();
+  const { data: old } = await db.from('transactions').select('*').eq('id', p!.transaction_id).single();
 
-  let proof: { receipt_path: string; receipt_name: string } | null = null;
-  if (file instanceof File) {
-    const up = await uploadReceipt(db, file, p!.paid_on);
-    if ('error' in up) fail(back, `העלאת האסמכתא נכשלה: ${up.error}`);
-    proof = { receipt_path: (up as { path: string }).path, receipt_name: file.name };
-  }
-  const { error } = await db.from('transactions').update({ reference, ...proof }).eq('id', p!.transaction_id);
+  const { fields, paths } = await uploadPayFiles(db, fd, back, p!.paid_on);
+  if (!paths.length && !reference) fail(back, 'יש לבחור קובץ או לכתוב מספר אסמכתא');
+  const { error } = await db.from('transactions').update({ reference, ...fields }).eq('id', p!.transaction_id);
   if (error) {
-    if (proof) await db.storage.from(RECEIPT_BUCKET).remove([proof.receipt_path]);
-    fail(back, dbMessage(error));
+    if (paths.length) await db.storage.from(RECEIPT_BUCKET).remove(paths);
+    fail(back, error.code === 'PGRST204' ? MISSING_PROOF : dbMessage(error));
   }
-  if (proof && old?.receipt_path) await db.storage.from(RECEIPT_BUCKET).remove([old.receipt_path]);
-  done(back, 'האסמכתא נשמרה');
+  const replaced = [fields.receipt_path && old?.receipt_path, fields.proof_path && old?.proof_path].filter(Boolean) as string[];
+  if (replaced.length) await db.storage.from(RECEIPT_BUCKET).remove(replaced);
+  done(back, fields.receipt_path || old?.receipt_path ? 'נשמר וקושר להוצאה' : 'נשמר. עדיין חסרה קבלה');
 }
 
-/** ביטול אישור השכר (גם ההוצאה ב"הכנסות והוצאות" והאסמכתא נמחקות) */
+/** ביטול אישור השכר (גם ההוצאה ב"הכנסות והוצאות", הקבלה והאסמכתא נמחקות) */
 export async function cancelPayroll(fd: FormData) {
   const db = await createClient();
   const back = backTo(fd, HOME);
@@ -125,9 +138,10 @@ export async function cancelPayroll(fd: FormData) {
   const month = `${str(fd, 'month').slice(0, 7)}-01`;
   const { data: p } = await db.from('teacher_payroll').select('transaction_id').eq('teacher_id', teacherId!).eq('month', month).single();
   if (p?.transaction_id) {
-    const { data: tx } = await db.from('transactions').select('receipt_path').eq('id', p.transaction_id).single();
+    const { data: tx } = await db.from('transactions').select('*').eq('id', p.transaction_id).single();
     await db.from('transactions').delete().eq('id', p.transaction_id);
-    if (tx?.receipt_path) await db.storage.from(RECEIPT_BUCKET).remove([tx.receipt_path]);
+    const files = [tx?.receipt_path, tx?.proof_path].filter(Boolean) as string[];
+    if (files.length) await db.storage.from(RECEIPT_BUCKET).remove(files);
   }
   const { error } = await db.from('teacher_payroll').delete().eq('teacher_id', teacherId!).eq('month', month);
   if (error) fail(back, dbMessage(error));

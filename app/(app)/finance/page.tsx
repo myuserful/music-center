@@ -4,7 +4,7 @@ import { TransactionFields } from '@/components/TransactionFields';
 import { Empty, Flash, PageHead, one, type SP } from '@/components/ui';
 import { copyRecurring, deleteTransaction, saveTransaction } from '@/lib/actions/finance';
 import { monthLabel, shekel } from '@/lib/billing';
-import { EXPENSE_GROUP_LABELS, PARENTS_INCOME, PARENTS_REFUND, TX_KIND_LABELS, type ExpenseGroup } from '@/lib/constants';
+import { EXPENSE_GROUP_LABELS, PARENTS_INCOME, PARENTS_REFUND, SALARY_CATEGORY, TX_KIND_LABELS, type ExpenseGroup } from '@/lib/constants';
 import { loadBilling, loadStudentNames, loadTables } from '@/lib/data';
 import { buildEntries, byCategory, inMonth, paidToTeachers, totals, trackBreakdown, yearTable, type Entry } from '@/lib/finance';
 import { ensureRecurring } from '@/lib/recurring';
@@ -147,7 +147,7 @@ export default async function FinancePage({ searchParams }: { searchParams: SP }
                   </tr>
                 );
               })}
-              {ledger.map((e) => <LedgerRow key={e.key} e={e} tx={manual.get(e.id)} back={back} />)}
+              {ledger.map((e) => <LedgerRow key={e.key} e={e} tx={manual.get(e.id)} back={back} salaryMonth={salaryMonth} />)}
             </tbody>
           </table>
         )}
@@ -164,7 +164,11 @@ export default async function FinancePage({ searchParams }: { searchParams: SP }
                   const t = manual.get(e.id);
                   return (
                     <li key={e.key}>
-                      <div>{e.label}<div className="muted">{t && fmtDate(t.occurred_on)}{t?.notes && ` · ${t.notes}`}</div></div>
+                      <div>
+                        {e.label}
+                        <div className="muted">{t && fmtDate(t.occurred_on)}{t?.notes && ` · ${t.notes}`}</div>
+                        {t && <TxReceipt tx={t} salaryMonth={salaryMonth} />}
+                      </div>
                       <strong>{shekel(e.amount)}</strong>
                     </li>
                   );
@@ -281,7 +285,24 @@ function CategoryCard({
   );
 }
 
-function LedgerRow({ e, tx, back }: { e: Entry; tx?: Transaction; back: string }) {
+/** קישורים לקבלה ולאסמכתא. בשכר מורים בלי קבלה: "חסרה קבלה", עם קישור למקום שמצרפים אותה */
+function TxReceipt({ tx, salaryMonth }: { tx: Transaction; salaryMonth: Map<number, string> }) {
+  const month = salaryMonth.get(tx.id);
+  return (
+    <>
+      {tx.receipt_path ? (
+        <div><a className="fin-clip" href={`/finance/${tx.id}/receipt`} target="_blank" rel="noopener" title={tx.receipt_name}>📎 קבלה</a></div>
+      ) : tx.category === SALARY_CATEGORY && (
+        <div><Link className="badge badge-pending" href={month ? `/payroll?month=${month.slice(0, 7)}` : `/finance/${tx.id}`}>חסרה קבלה</Link></div>
+      )}
+      {tx.proof_path && (
+        <div><a className="fin-clip" href={`/finance/${tx.id}/receipt?file=proof`} target="_blank" rel="noopener" title={tx.proof_name}>📎 אסמכתא</a></div>
+      )}
+    </>
+  );
+}
+
+function LedgerRow({ e, tx, back, salaryMonth }: { e: Entry; tx?: Transaction; back: string; salaryMonth: Map<number, string> }) {
   return (
     <tr>
       <td>{e.source === 'fund' ? '' : fmtDate(tx?.occurred_on ?? e.date)}</td>
@@ -296,9 +317,7 @@ function LedgerRow({ e, tx, back }: { e: Entry; tx?: Transaction; back: string }
       </td>
       <td>
         {e.method}{tx?.reference && <div className="muted">{tx.reference}</div>}
-        {tx?.receipt_path && (
-          <a className="fin-clip" href={`/finance/${tx.id}/receipt`} target="_blank" rel="noopener" title={tx.receipt_name}>📎 קבלה</a>
-        )}
+        {tx && <TxReceipt tx={tx} salaryMonth={salaryMonth} />}
       </td>
       <td><strong>{shekel(e.amount)}</strong></td>
       <td>

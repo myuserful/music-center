@@ -260,7 +260,7 @@ export async function loadPayroll(db: DB, range: { first: string; to: string }) 
     db.from('day_lessons').select('*').gte('lesson_date', range.first).lte('lesson_date', range.to),
     db.from('day_closures').select('*').gte('lesson_date', range.first).lte('lesson_date', range.to),
     db.from('teacher_extras').select('*').gte('extra_date', range.first).lte('extra_date', range.to).order('extra_date'),
-    db.from('teacher_payroll').select('*, transactions(reference, receipt_path, receipt_name)').eq('month', range.first),
+    db.from('teacher_payroll').select('*, transactions(*)').eq('month', range.first),
   ]);
   const err = [lessons, closures].find((r) => r.error)?.error;
   if (err) throw new Error(err.message);

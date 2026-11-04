@@ -7,8 +7,8 @@ const MAX_RECEIPT = 10 * 1024 * 1024;
 const RECEIPT_TYPES = /^(image\/|application\/pdf$|application\/msword$|application\/vnd\.openxmlformats-officedocument\.|application\/vnd\.ms-excel$)/;
 
 /** הקובץ מהטופס (או null אם לא נבחר), אחרי בדיקת סוג וגודל. מחרוזת = הודעת שגיאה */
-export function receiptFile(fd: FormData): File | null | string {
-  const f = fd.get('receipt');
+export function receiptFile(fd: FormData, field = 'receipt'): File | null | string {
+  const f = fd.get(field);
   if (!(f instanceof File) || f.size === 0) return null;
   if (f.size > MAX_RECEIPT) return 'הקובץ גדול מ-10MB';
   if (!RECEIPT_TYPES.test(f.type)) return 'אפשר לצרף תמונה, PDF, Word או Excel';

@@ -7,7 +7,7 @@ import { monthLabel, shekel } from '@/lib/billing';
 import { LESSON_MINUTES, TX_METHOD_LABELS, TX_METHODS } from '@/lib/constants';
 import { addDays, dmy, hoursLabel, taughtBy } from '@/lib/day';
 import { loadPayroll, loadTables } from '@/lib/data';
-import { payrollRange, teacherPayroll } from '@/lib/payroll';
+import { monthsMissingReceipt, payrollRange, payrollRemaining, teacherPayroll } from '@/lib/payroll';
 import { autoLockOverdue } from '@/lib/dayLock';
 import { RECEIPT_ACCEPT } from '@/lib/receiptFile';
 import { createClient } from '@/lib/supabase/server';
@@ -24,7 +24,11 @@ export default async function PayrollPage({ searchParams }: { searchParams: SP }
   const db = await createClient();
   // ימים שלא נסגרו ביד נסגרים 24 שעות אחרי שנגמרו (לפני שמחשבים)
   await autoLockOverdue(db);
-  const [all, data] = await Promise.all([loadTables(db, 'teachers'), loadPayroll(db, range)]);
+  const [all, data, allPaid] = await Promise.all([
+    loadTables(db, 'teachers'), loadPayroll(db, range),
+    db.from('teacher_payroll').select('month, transaction_id, transactions(receipt_path)'),
+  ]);
+  const otherMonths = monthsMissingReceipt((allPaid.data ?? []) as unknown as Parameters<typeof monthsMissingReceipt>[0], month);
   // שבוע עם פעילות לפי לוח מועדי הפעילות (ראשון עד שישי)
   const isActiveWeek = (sunday: string) => [0, 1, 2, 3, 4, 5].some((i) => isActivityDate(addDays(sunday, i)));
 
@@ -45,6 +49,8 @@ export default async function PayrollPage({ searchParams }: { searchParams: SP }
     }));
   const total = rows.reduce((n, r) => n + (r.paid ? Number(r.paid.amount) : r.p.amount ?? 0), 0);
   const openCount = rows.reduce((n, r) => n + r.p.openDays.length, 0);
+  const left = payrollRemaining(rows.map((r) => ({ amount: r.p.amount, paid: r.paid ? Number(r.paid.amount) : null })));
+  const noReceipt = rows.filter((r) => r.paid?.transaction_id && !r.paid.transactions?.receipt_path).length;
 
   return (
     <>
@@ -59,9 +65,26 @@ export default async function PayrollPage({ searchParams }: { searchParams: SP }
 
       <div className="grid grid-4" style={{ marginBottom: 18 }}>
         <div className="stat"><div className="stat-num">{shekel(total)}</div><div className="stat-label">סה&quot;כ שכר החודש</div></div>
+        <div className={`stat ${left.remaining ? 'stat-pending' : ''}`}>
+          <div className="stat-num">{shekel(left.remaining)}</div>
+          <div className="stat-label">
+            נותר לשלם החודש ({left.unpaid} מורים)
+            {left.noRate > 0 && <div className="muted">לא כולל {left.noRate} מורים בלי תעריף לשעה</div>}
+            {left.gap > 0 && <div className="muted">ועוד {shekel(left.gap)} הפרש אצל מי ששולם</div>}
+          </div>
+        </div>
         <div className="stat stat-free"><div className="stat-num">{rows.filter((r) => r.paid).length} / {rows.length}</div><div className="stat-label">מורים ששולמו</div></div>
         <div className={`stat ${openCount ? 'stat-pending' : ''}`}><div className="stat-num">{openCount}</div><div className="stat-label">ימים שעוד לא נסגרו (לא נספרו)</div></div>
+        <div className={`stat ${noReceipt ? 'stat-pending' : ''}`}><div className="stat-num">{noReceipt}</div><div className="stat-label">תשלומים בלי קבלה</div></div>
       </div>
+      {otherMonths.length > 0 && (
+        <div className="flash flash-error" role="alert">
+          חסרות קבלות על שכר ששולם:{' '}
+          {otherMonths.map((m) => (
+            <Link key={m.month} className="chip" href={`/payroll?month=${m.month}`}>{monthLabel(`${m.month}-01`)} ({m.count})</Link>
+          ))}
+        </div>
+      )}
       <p className="muted">
         נספר: שיעור שהתלמיד/ה הגיע/ה אליו או לא הגיע/ה בלי הודעה, וביטול מראש באמצע היום ({LESSON_MINUTES} דק&apos; לשיעור).
         אפשר לשנות לכל שיעור בסגירת יום (&quot;למורה&quot;). מילוי מקום נספר למי שלימד/ה. מינימום שבועי: רק בשבוע שהסתיים ויש בו פעילות לפי הלוח.
@@ -98,17 +121,21 @@ export default async function PayrollPage({ searchParams }: { searchParams: SP }
                           <div className="muted">החישוב היום: {shekel(p.amount)}</div>
                         )}
                         {paid.transactions?.reference && <div className="muted">אסמכתא: {paid.transactions.reference}</div>}
-                        {paid.transactions?.receipt_path && paid.transaction_id && (
-                          <a className="fin-clip" href={`/finance/${paid.transaction_id}/receipt`} target="_blank" rel="noopener" title={paid.transactions.receipt_name}>📎 אסמכתא</a>
+                        {paid.transactions?.receipt_path && paid.transaction_id ? (
+                          <div><a className="fin-clip" href={`/finance/${paid.transaction_id}/receipt`} target="_blank" rel="noopener" title={paid.transactions.receipt_name}>📎 קבלה</a></div>
+                        ) : <div><span className="badge badge-pending">חסרה קבלה</span></div>}
+                        {paid.transactions?.proof_path && paid.transaction_id && (
+                          <div><a className="fin-clip" href={`/finance/${paid.transaction_id}/receipt?file=proof`} target="_blank" rel="noopener" title={paid.transactions.proof_name}>📎 אסמכתא</a></div>
                         )}
-                        <details className="pay-attach">
-                          <summary>{paid.transactions?.receipt_path ? 'החלפת אסמכתא' : 'צירוף אסמכתא'}</summary>
+                        <details className="pay-attach" open={!paid.transactions?.receipt_path}>
+                          <summary>{paid.transactions?.receipt_path ? 'החלפה או צירוף של קבלה ואסמכתא' : 'צירוף קבלה ואסמכתא'}</summary>
                           <form action={attachPayrollProof} className="pay-proof">
                             <input type="hidden" name="teacher_id" value={t.id} />
                             <input type="hidden" name="month" value={month} />
                             <input type="hidden" name="back" value={back} />
                             <input name="reference" defaultValue={paid.transactions?.reference ?? ''} placeholder="מספר אסמכתא" aria-label="מספר אסמכתא" />
-                            <input type="file" name="receipt" accept={RECEIPT_ACCEPT} aria-label="קובץ אסמכתא" />
+                            <label className="muted">קבלה<input type="file" name="receipt" accept={RECEIPT_ACCEPT} /></label>
+                            <label className="muted">אסמכתא<input type="file" name="proof" accept={RECEIPT_ACCEPT} /></label>
                             <button className="btn btn-xs">שמירה</button>
                           </form>
                         </details>
@@ -139,7 +166,8 @@ export default async function PayrollPage({ searchParams }: { searchParams: SP }
                         </div>
                         <div className="pay-proof">
                           <input name="reference" placeholder="מספר אסמכתא" aria-label="מספר אסמכתא" />
-                          <input type="file" name="receipt" accept={RECEIPT_ACCEPT} aria-label="קובץ אסמכתא" />
+                          <label className="muted">קבלה (אפשר גם אחרי התשלום)<input type="file" name="receipt" accept={RECEIPT_ACCEPT} /></label>
+                          <label className="muted">אסמכתא<input type="file" name="proof" accept={RECEIPT_ACCEPT} /></label>
                         </div>
                       </form>
                     )}

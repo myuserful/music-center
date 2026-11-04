@@ -24,6 +24,34 @@ export function payrollRange(month: string) {
   return { first, last, to: to > last ? to : last };
 }
 
+/**
+ * כמה נותר לשלם למורים בחודש: הסכום המחושב של מי שעוד לא שולם.
+ * noRate: מורים עם שעות בלי תעריף, שהסכום שלהם לא ידוע ולא נספר.
+ * gap: אצל מי שכבר שולם, כמה החישוב היום גבוה ממה ששולם (למשל שיעורים שנוספו אחרי התשלום)
+ */
+export function payrollRemaining(rows: { amount: number | null; paid: number | null }[]) {
+  const open = rows.filter((r) => r.paid === null && (r.amount === null || r.amount > 0));
+  return {
+    remaining: open.reduce((n, r) => n + (r.amount ?? 0), 0),
+    unpaid: open.filter((r) => r.amount !== null).length,
+    noRate: open.filter((r) => r.amount === null).length,
+    gap: rows.reduce((n, r) => n + (r.paid !== null && r.amount !== null ? Math.max(0, Math.round(r.amount - r.paid)) : 0), 0),
+  };
+}
+
+/** חודשים אחרים שיש בהם שכר ששולם בלי קבלה, עם כמה תשלומים חסרים. מהישן לחדש */
+export function monthsMissingReceipt(
+  rows: { month: string; transaction_id: number | null; transactions?: { receipt_path: string | null } | null }[], currentMonth: string,
+): { month: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    const month = r.month.slice(0, 7);
+    if (!r.transaction_id || r.transactions?.receipt_path || month === currentMonth) continue;
+    counts.set(month, (counts.get(month) ?? 0) + 1);
+  }
+  return [...counts].sort(([a], [b]) => a.localeCompare(b)).map(([month, count]) => ({ month, count }));
+}
+
 export type PayrollWeek = { start: string; minutes: number; topup: number; status: 'counted' | 'no_activity' | 'not_ended' };
 
 /**

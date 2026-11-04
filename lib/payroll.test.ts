@@ -1,7 +1,37 @@
 import { describe, expect, it } from 'vitest';
 import { lessonCount, teacherPaidByRule, teacherPaidRows } from './day';
-import { monthWeeks, teacherPayroll } from './payroll';
+import { monthsMissingReceipt, monthWeeks, payrollRemaining, teacherPayroll } from './payroll';
 import type { DayLesson, TeacherExtra } from './types';
+
+describe('payrollRemaining', () => {
+  it('סופר רק מי שעוד לא שולם', () => {
+    expect(payrollRemaining([{ amount: 360, paid: null }, { amount: 1450, paid: 1450 }, { amount: 100, paid: null }]))
+      .toEqual({ remaining: 460, unpaid: 2, noRate: 0, gap: 0 });
+  });
+
+  it('בלי תעריף לא נכנס לסכום אבל נספר בנפרד, ומי שיוצא לו 0 לא נספר', () => {
+    expect(payrollRemaining([{ amount: null, paid: null }, { amount: 0, paid: null }]))
+      .toEqual({ remaining: 0, unpaid: 0, noRate: 1, gap: 0 });
+  });
+
+  it('הפרש רק כשהחישוב גבוה ממה ששולם', () => {
+    expect(payrollRemaining([{ amount: 1500, paid: 1450 }, { amount: 1000, paid: 1450 }]).gap).toBe(50);
+  });
+});
+
+describe('monthsMissingReceipt', () => {
+  const pay = (month: string, receipt: string | null, transaction_id: number | null = 1) => ({ month, transaction_id, transactions: { receipt_path: receipt } });
+
+  it('סופר חודשים אחרים בלי קבלה, מהישן לחדש', () => {
+    expect(monthsMissingReceipt([
+      pay('2026-10-01', null), pay('2026-09-01', null), pay('2026-10-01', null), pay('2026-08-01', 'a.pdf'), pay('2026-11-01', null),
+    ], '2026-11')).toEqual([{ month: '2026-09', count: 1 }, { month: '2026-10', count: 2 }]);
+  });
+
+  it('שכר שההוצאה שלו נמחקה לא נספר', () => {
+    expect(monthsMissingReceipt([pay('2026-10-01', null, null)], '2026-11')).toEqual([]);
+  });
+});
 
 let nextId = 1;
 const row = (r: Partial<DayLesson>): DayLesson => ({

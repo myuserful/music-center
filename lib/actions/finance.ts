@@ -62,10 +62,11 @@ export async function deleteTransaction(fd: FormData) {
   const db = await createClient();
   const back = backTo(fd, HOME);
   const id = num(fd, 'id')!;
-  const { data: old } = await db.from('transactions').select('receipt_path').eq('id', id).single();
+  const { data: old } = await db.from('transactions').select('*').eq('id', id).single();
   const { error } = await db.from('transactions').delete().eq('id', id);
   if (error) fail(back, dbMessage(error));
-  if (old?.receipt_path) await db.storage.from(BUCKET).remove([old.receipt_path]);
+  const files = [old?.receipt_path, old?.proof_path].filter(Boolean) as string[];
+  if (files.length) await db.storage.from(BUCKET).remove(files);
   done(back, 'נמחק');
 }
 

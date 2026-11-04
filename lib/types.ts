@@ -25,8 +25,8 @@ export type TeacherExtra = {
 /** שכר חודש שאושר ושולם */
 export type TeacherPayroll = {
   teacher_id: number; month: string; amount: number; minutes: number; transaction_id: number | null; paid_on: string;
-  /** ההוצאה שנרשמה: מספר האסמכתא וקובץ האסמכתא */
-  transactions?: { reference: string; receipt_path: string | null; receipt_name: string } | null;
+  /** ההוצאה שנרשמה: מספר האסמכתא, הקבלה וקובץ האסמכתא (לפני 0060: בלי קובץ אסמכתא) */
+  transactions?: { reference: string; receipt_path: string | null; receipt_name: string; proof_path?: string | null; proof_name?: string } | null;
 };
 /** פרטי הבנק של מורה בשורה אחת להעברה ('' אם לא מולאו) */
 export function bankLabel(t: Pick<Teacher, 'bank_name' | 'bank_branch' | 'bank_account' | 'bank_holder'>) {
@@ -89,6 +89,8 @@ export type Transaction = {
   id: number; kind: TxKind; occurred_on: string; amount: number; category: string; counterparty: string;
   teacher_id: number | null; method: TxMethod; reference: string; recurring: boolean; notes: string;
   receipt_path: string | null; receipt_name: string;
+  /** קובץ אסמכתא להעברה, בנפרד מהקבלה (לפני 0060: חסר) */
+  proof_path?: string | null; proof_name?: string;
   /** נרשם אוטומטית מהוצאה קבועה (לפני 0058: חסר) */
   recurring_id?: number | null;
 };
