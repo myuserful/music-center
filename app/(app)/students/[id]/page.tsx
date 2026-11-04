@@ -12,6 +12,7 @@ import { StudentAccount } from '@/components/StudentAccount';
 import { StudentStatusFields } from '@/components/StudentStatusFields';
 import { BackLink, Empty, Flash, one, PageHead, StatusActions, StatusBadge, type SP } from '@/components/ui';
 import { isoDate } from '@/lib/age';
+import { SIBLING_CYCLE, SIBLING_DEFAULT_AMOUNT } from '@/lib/billing';
 import { attendedDates, isClosed } from '@/lib/day';
 import {
   addEnrollment, deleteEnrollment, deleteLesson, setEnrollmentStatus, setLessonStatus,
@@ -144,6 +145,22 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
           <label>ת&quot;ז על ההפניה<input name="referral_id_number" defaultValue={s.referral_id_number ?? ''} dir="ltr" inputMode="numeric" /></label>
           <label className="check"><input type="checkbox" name="hmo_reported" defaultChecked={s.hmo_reported} /> עודכן/ה בקופה</label>
           <PaymentTrackField track={s.payment_track} existing={!isNew} />
+          {all.students.length === 0 || 'sibling_discount' in all.students[0] ? (
+            <>
+              <input type="hidden" name="sibling_discount_field" value="1" />
+              <label className="check" title="בפרטי ובמכבי בלבד. בפיקדון ובשיעור ניסיון אין הנחה">
+                <input type="checkbox" name="sibling_discount" defaultChecked={!!s.sibling_discount} /> הנחת אחים
+              </label>
+              <label>
+                סכום ההנחה לכל {SIBLING_CYCLE} שיעורים
+                <input name="sibling_discount_amount" type="number" min="0" step="any" defaultValue={s.sibling_discount_amount ?? SIBLING_DEFAULT_AMOUNT} />
+              </label>
+              <label title="רק שיעורים מהתאריך הזה נספרים להנחה">
+                סופרים שיעורים מתאריך
+                <input name="sibling_discount_from" type="date" defaultValue={(s.sibling_discount && s.sibling_discount_from) || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' })} />
+              </label>
+            </>
+          ) : <span className="muted">הנחת אחים: צריך להריץ את 0059_sibling_discount.sql ב-Supabase</span>}
           <label className="check"><input type="checkbox" name="standing_order" defaultChecked={s.standing_order} /> הוראת קבע</label>
           <label className="check"><input type="checkbox" name="contract_signed" defaultChecked={s.contract_signed} /> חתמו על חוזה</label>
           <label className="check"><input type="checkbox" name="card_on_file" defaultChecked={s.card_on_file} /> נלקחו פרטי אשראי</label>

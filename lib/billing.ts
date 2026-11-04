@@ -132,6 +132,31 @@ export function diffCharges(existing: Charge[], planned: NewCharge[], exact = fa
   };
 }
 
+/** הנחת אחים: מכל SIBLING_CYCLE שיעורים ששילמו עליהם, הנחה בסכום שנרשם בכרטיס */
+export const SIBLING_CYCLE = 4;
+export const SIBLING_DEFAULT_AMOUNT = 25;
+/** בפיקדון הכסף חוזר להורים, ובשיעור ניסיון אין המשך: אין שם הנחה */
+export const SIBLING_TRACKS: string[] = ['private', 'maccabi_full', 'maccabi_split'];
+
+const discountOrder = (a: Charge, b: Charge) =>
+  a.lesson_date.localeCompare(b.lesson_date) || (a.teacher_id ?? 0) - (b.teacher_id ?? 0) || a.id - b.id;
+
+/**
+ * השיעורים שנספרים להנחת אחים, לפי הסדר: חיובי שיעור מהתאריך שנבחר, במסלול שיש בו הנחה.
+ * נספרים לפי החיובים ולא לפי הנוכחות, אז שיעור חינם בזוג, שיעור שהחיוב שלו נמחק ביד ושיעור שלא חויב לא נכנסים לספירה
+ */
+export const siblingCounted = (charges: Charge[], from: string | null | undefined) =>
+  charges.filter((c) => c.kind === 'lesson' && Number(c.amount) > 0 && SIBLING_TRACKS.includes(c.track) && c.lesson_date >= (from ?? ''))
+    .sort(discountOrder);
+
+/** שורות ההנחה שצריכות להיות לתלמיד/ה: אחת על כל שיעור רביעי שנספר, בתאריך של אותו שיעור */
+export function planSiblingDiscounts(charges: Charge[], amount: number, from: string | null | undefined): NewCharge[] {
+  return siblingCounted(charges, from).filter((_, i) => (i + 1) % SIBLING_CYCLE === 0).map((c) => ({
+    student_id: c.student_id, teacher_id: c.teacher_id, lesson_date: c.lesson_date, track: c.track, kind: 'sibling_discount' as const,
+    description: `הנחת אחים על ${SIBLING_CYCLE} שיעורים`, amount: -Math.abs(amount), due_date: c.lesson_date,
+  }));
+}
+
 /** סכום החיוב בפועל: פיקדון שהביאו עליו התחייבות לא נספר (הכסף חוזר להורים) */
 export const effectiveAmount = (c: Charge) => (c.kind === 'deposit' && c.commitment_on ? 0 : Number(c.amount));
 
@@ -243,6 +268,8 @@ export function monthRequest(
   weekdays: number[], month: string, today: string, track: PaymentTrack, s: BillingSettings, balance: number, charged: string[] = [],
   /** שיעורים בזוג: ימי השבוע שלהם (לא כלולים ב-weekdays), וכמה שיעורים בזוג כבר חויבו (כדי לדעת איפה בסבב של 4) */
   pair?: { weekdays: number[]; done: number },
+  /** הנחת אחים: הסכום, וכמה שיעורים כבר נספרו (כדי לדעת איפה בסבב של 4) */
+  sibling?: { amount: number; done: number },
 ) {
   const price = upfrontPrice(track, s);
   // בקופות האחרות משלמים על כל שיעור; שיעור ניסיון - לא ממשיכים, אין מה לבקש מראש
@@ -251,7 +278,8 @@ export function monthRequest(
   const pairDates = pair ? remainingLessonDates(pair.weekdays, month, today, charged) : [];
   const free = pairDates.filter((_, i) => (pair!.done + i + 1) % PAIR_CYCLE === 0).length;
   const lessons = regular + pairDates.length - free;
-  return { lessons, free, price, total: Math.max(0, lessons * price - balance) };
+  const discount = sibling ? Math.floor(((sibling.done % SIBLING_CYCLE) + lessons) / SIBLING_CYCLE) * sibling.amount : 0;
+  return { lessons, free, price, discount, total: Math.max(0, lessons * price - discount - balance) };
 }
 
 // ---- קבלות ----

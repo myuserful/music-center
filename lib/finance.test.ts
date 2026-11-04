@@ -22,7 +22,7 @@ describe('buildEntries', () => {
     );
     expect(entries.map((e) => e.key).sort()).toEqual(['p1', 'p3', 't1', 't2']);
     expect(totals(entries)).toEqual({
-      income: 500 + 300, refunds: 75, teachers: 0, fixed: 100, variable: 0, investment: 0, operating: 625, afterInvestment: 625,
+      income: 500 + 300, refunds: 75, teachers: 0, fixed: 100, variable: 0, investment: 0, expenses: 100, operating: 625, afterInvestment: 625,
     });
     expect(byCategory(entries, 'income').map((c) => c.category)).toEqual(['תרומה', 'שכר לימוד - הורים']);
   });
@@ -61,7 +61,7 @@ describe('teacher pay', () => {
 
   it('is its own group and counts against the operating profit of the salary month', () => {
     expect(expenseGroup('שכר מורים')).toBe('teachers');
-    expect(totals(entries.filter((e) => inMonth(e.date, '2026-10-01')))).toMatchObject({ teachers: 1400, fixed: 0, operating: -1400 });
+    expect(totals(entries.filter((e) => inMonth(e.date, '2026-10-01')))).toMatchObject({ teachers: 1400, fixed: 0, expenses: 1400, operating: -1400 });
   });
 
   it('shows what actually went out each month, by payment date', () => {

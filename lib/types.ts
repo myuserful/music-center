@@ -55,6 +55,8 @@ export type Student = {
   email: string; no_email: boolean;
   /** משפחה (אחים = אותה משפחה). null = לא משויך/ת */
   family_id: number | null;
+  /** הנחת אחים: סכום לכל 4 שיעורים, ומאיזה תאריך סופרים (לפני 0059: חסר) */
+  sibling_discount?: boolean; sibling_discount_amount?: number; sibling_discount_from?: string | null;
   payment_track: PaymentTrack; standing_order: boolean; needs_review: boolean;
 };
 export type Contact = {

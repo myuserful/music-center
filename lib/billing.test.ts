@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  account, addMonths, chargesForLesson, diffCharges, dropWaived, freePairLessons, monthRequest, paymentCoverage, planCharges, planReceipts, remainingLessonDates,
+  account, addMonths, chargesForLesson, diffCharges, dropWaived, freePairLessons, monthRequest, paymentCoverage, planCharges, planReceipts, planSiblingDiscounts, remainingLessonDates, siblingCounted,
   type NewCharge,
 } from './billing';
 import type { PaymentTrack } from './constants';
@@ -149,7 +149,7 @@ describe('monthRequest', () => {
   it('remaining weekly lessons this month times the upfront price, minus credit', () => {
     // אוקטובר 2026: ימי שלישי מ-20 והלאה = 20, 27
     expect(remainingLessonDates([2], '2026-10', '2026-10-20')).toEqual(['2026-10-20', '2026-10-27']);
-    expect(monthRequest([2], '2026-10', '2026-10-20', 'private', S, 0)).toEqual({ lessons: 2, free: 0, price: 75, total: 150 });
+    expect(monthRequest([2], '2026-10', '2026-10-20', 'private', S, 0)).toEqual({ lessons: 2, free: 0, discount: 0, price: 75, total: 150 });
     expect(monthRequest([2], '2026-10', '2026-10-20', 'maccabi_split', S, 45)?.total).toBe(45);
     expect(monthRequest([2], '2026-10', '2026-10-20', 'private', S, -100)?.total).toBe(250);
     expect(monthRequest([2], '2026-10', '2026-10-20', 'unknown', S, 0)).toBeNull();
@@ -158,7 +158,7 @@ describe('monthRequest', () => {
   it('a lesson already charged today is not asked for again (student 72)', () => {
     // חמישי: 22.10 כבר נסגר וחויב, נשאר 29.10
     expect(remainingLessonDates([4], '2026-10', '2026-10-22', ['2026-10-22'])).toEqual(['2026-10-29']);
-    expect(monthRequest([4], '2026-10', '2026-10-22', 'private', S, -75, ['2026-10-22'])).toEqual({ lessons: 1, free: 0, price: 75, total: 150 });
+    expect(monthRequest([4], '2026-10', '2026-10-22', 'private', S, -75, ['2026-10-22'])).toEqual({ lessons: 1, free: 0, discount: 0, price: 75, total: 150 });
   });
 
   it('other funds pay a deposit per lesson, not a month ahead', () => {
@@ -257,6 +257,87 @@ describe('pair lessons: every 4th is free', () => {
   it('month request skips the free lesson by position in the cycle', () => {
     // נשארו 4 שלישי באוקטובר (6, 13, 20, 27). כבר חויבו 5 שיעורים בזוג: 6=6, 13=7, 20=8 (חינם), 27=9
     expect(monthRequest([], '2026-10', '2026-10-01', 'private', S, 0, [], { weekdays: [2], done: 5 }))
-      .toEqual({ lessons: 3, free: 1, price: 75, total: 225 });
+      .toEqual({ lessons: 3, free: 1, discount: 0, price: 75, total: 225 });
+  });
+});
+
+describe('הנחת אחים', () => {
+  const lessons = (n: number, c: Partial<Charge> = {}) => Array.from({ length: n }, (_, i) =>
+    charge({ lesson_date: `2026-10-${String(i + 1).padStart(2, '0')}`, due_date: `2026-10-${String(i + 1).padStart(2, '0')}`, ...c }));
+  const asCharge = (c: NewCharge) => charge(c);
+
+  it('הנחה אחת על כל שיעור רביעי, בסכום שנרשם ובתאריך של השיעור', () => {
+    const plan = planSiblingDiscounts(lessons(9), 25, null);
+    expect(plan.map((c) => [c.kind, c.amount, c.lesson_date])).toEqual([
+      ['sibling_discount', -25, '2026-10-04'], ['sibling_discount', -25, '2026-10-08'],
+    ]);
+    expect(planSiblingDiscounts(lessons(4), 40, null)[0].amount).toBe(-40);
+  });
+
+  it('סופרים רק מהתאריך שנבחר', () => {
+    expect(planSiblingDiscounts(lessons(7), 25, '2026-10-05')).toHaveLength(0);
+    expect(planSiblingDiscounts(lessons(8), 25, '2026-10-05').map((c) => c.lesson_date)).toEqual(['2026-10-08']);
+  });
+
+  it('לא נספרים: שיעור חינם בזוג, פיקדון, זיכוי מכבי, ניסיון וחיוב ידני', () => {
+    const other = [
+      charge({ amount: 0, description: 'חינם' }),
+      charge({ kind: 'deposit', track: 'fund_deposit' }),
+      charge({ kind: 'maccabi_later', track: 'maccabi_split', amount: 95 }),
+      charge({ track: 'trial', amount: 55 }),
+      charge({ kind: 'manual' }),
+    ];
+    expect(siblingCounted(other, null)).toHaveLength(0);
+    expect(siblingCounted(lessons(3, { track: 'maccabi_split', amount: 45 }), null)).toHaveLength(3);
+    expect(siblingCounted(lessons(1, { track: 'maccabi_full', amount: 140 }), null)).toHaveLength(1);
+  });
+
+  it('אותה ספירה גם כשהחיובים מגיעים בסדר אחר', () => {
+    expect(planSiblingDiscounts(lessons(4).reverse(), 25, null).map((c) => c.lesson_date)).toEqual(['2026-10-04']);
+  });
+
+  it('חישוב חוזר לא מכפיל ולא מוחק, וגם שינוי סכום לא נוגע בהנחה שכבר קיימת', () => {
+    const base = lessons(8);
+    const existing = planSiblingDiscounts(base, 25, null).map(asCharge);
+    expect(diffCharges(existing, planSiblingDiscounts(base, 25, null))).toEqual({ insert: [], remove: [] });
+    expect(diffCharges(existing, planSiblingDiscounts(base, 40, null))).toEqual({ insert: [], remove: [] });
+  });
+
+  it('שיעור שירד מזיז את ההנחה לשיעור הרביעי החדש', () => {
+    const base = lessons(5);
+    const existing = planSiblingDiscounts(base, 25, null).map(asCharge);
+    const { insert, remove } = diffCharges(existing, planSiblingDiscounts(base.filter((c) => c.lesson_date !== '2026-10-02'), 25, null));
+    expect(insert.map((c) => c.lesson_date)).toEqual(['2026-10-05']);
+    expect(remove).toEqual([existing[0].id]);
+  });
+
+  it('הנחה שנמחקה ביד לא חוזרת', () => {
+    const plan = planSiblingDiscounts(lessons(4), 25, null);
+    const waived = [{ teacher_id: 1, lesson_date: '2026-10-04', student_id: 1, kind: 'sibling_discount' }];
+    expect(dropWaived(plan, waived)).toHaveLength(0);
+  });
+
+  it('היתרה והחוב בחשבון מחושבים עם ההנחה', () => {
+    const base = lessons(4);
+    const charges = [...base, ...planSiblingDiscounts(base, 25, null).map(asCharge)];
+    const a = account(charges, [pay(275)], '2026-10-20');
+    expect(a.balance).toBe(0);
+    expect(a.lines.filter((l) => l.status !== 'paid')).toHaveLength(0);
+    expect(account(charges, [], '2026-10-20').balance).toBe(-275);
+  });
+
+  it('במכבי מפוצל ההנחה לא נוגעת בזיכוי מכבי', () => {
+    const base = lessons(4, { track: 'maccabi_split', amount: 45 });
+    const later = charge({ kind: 'maccabi_later', track: 'maccabi_split', amount: 95, due_date: '2026-10-10' });
+    const a = account([...base, later, ...planSiblingDiscounts(base, 25, null).map(asCharge)], [pay(155)], '2026-10-20');
+    expect(a.balance).toBe(0);
+    expect(a.overdueAmount).toBe(95);
+  });
+
+  it('הסכום לבקשה מראש כולל הנחה שתגיע החודש', () => {
+    // שלישי באוקטובר 2026: 20 ו-27. נספרו כבר 3, אז השיעור הבא הוא הרביעי
+    const r = monthRequest([2], '2026-10', '2026-10-20', 'private', S, 0, [], undefined, { amount: 25, done: 3 });
+    expect(r).toEqual({ lessons: 2, free: 0, discount: 25, price: 75, total: 125 });
+    expect(monthRequest([2], '2026-10', '2026-10-20', 'private', S, 0, [], undefined, { amount: 25, done: 0 })?.discount).toBe(0);
   });
 });

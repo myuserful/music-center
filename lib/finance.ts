@@ -55,6 +55,7 @@ export function buildEntries(
 export const inMonth = (date: string, month: string) => date.slice(0, 7) === month.slice(0, 7);
 
 /**
+ * expenses: סך ההוצאות, כולל שכר מורים ובלי השקעות בעסק.
  * operating: הרווח מהפעילות, בלי השקעות בעסק. afterInvestment: מה שנשאר אחרי ההשקעות.
  * החזר להורים יורד מהרווח, אבל לא נספר כהוצאה של העסק
  */
@@ -65,8 +66,9 @@ export function totals(entries: Entry[]) {
     else if (e.group) t[e.group] += e.amount;
     else t.refunds += e.amount;
   }
-  const operating = t.income - t.refunds - t.teachers - t.fixed - t.variable;
-  return { ...t, operating, afterInvestment: operating - t.investment };
+  const expenses = t.teachers + t.fixed + t.variable;
+  const operating = t.income - t.refunds - expenses;
+  return { ...t, expenses, operating, afterInvestment: operating - t.investment };
 }
 
 /** התשלומים למורים שיצאו בפועל בחודש, לפי תאריך התשלום */

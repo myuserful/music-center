@@ -46,6 +46,7 @@ export default async function FinancePage({ searchParams }: { searchParams: SP }
   const otherIncome = sum.income - tracks.deposit.income - tracks.private.income - tracks.maccabi.income;
   const totalDebt = Object.values(tracks).reduce((n, t) => n + t.debt, 0);
   const debtLabel = lastDay < today ? 'חייבים בסוף החודש' : 'חייבים כרגע';
+  const maccabiUpcoming = Object.values(tracks).reduce((n, t) => n + t.maccabiUpcoming, 0);
 
   const income = byCategory(monthEntries, 'income');
   const expenseOf = (group: ExpenseGroup) => byCategory(monthEntries.filter((e) => e.group === group), 'expense');
@@ -88,6 +89,7 @@ export default async function FinancePage({ searchParams }: { searchParams: SP }
           <div className="fin-track-row"><span>שכר מורים</span><strong className="fin-neg">{shekel(sum.teachers)}</strong></div>
           <div className="fin-track-row"><span>הוצאות קבועות</span><strong className="fin-neg">{shekel(sum.fixed)}</strong></div>
           <div className="fin-track-row"><span>הוצאות משתנות</span><strong className="fin-neg">{shekel(sum.variable)}</strong></div>
+          <div className="fin-track-row"><span>סה&quot;כ הוצאות (כולל שכר)</span><strong className="fin-neg">{shekel(sum.expenses)}</strong></div>
           <div className="fin-track-row fin-track-net">
             <span>{sum.operating < 0 ? 'הפסד מהפעילות' : 'רווח מהפעילות'}</span>
             <strong className={sum.operating < 0 ? 'fin-neg' : 'fin-track-in'}>{shekel(Math.abs(sum.operating))}</strong>
@@ -96,6 +98,11 @@ export default async function FinancePage({ searchParams }: { searchParams: SP }
           <div className="fin-track-row muted"><span>נשאר אחרי השקעות</span><span>{shekel(sum.afterInvestment)}</span></div>
           <div className="fin-track-row"><span>{debtLabel}</span><strong>{shekel(totalDebt)}</strong></div>
           {tracks.other.debt > 0 && <div className="muted">כולל {shekel(tracks.other.debt)} מניסיון ומסלול לא ידוע</div>}
+          <div className="fin-track-row"><span>עתידי ממכבי</span><strong>{shekel(maccabiUpcoming)}</strong></div>
+          <div className="fin-track-row fin-track-net">
+            <span>סה&quot;כ הכנסות כולל חייבים ועתידי</span>
+            <strong className="fin-track-in">{shekel(sum.income - sum.refunds + totalDebt + maccabiUpcoming)}</strong>
+          </div>
           <div className="fin-track-row muted"><span>מתחילת {y}, לפני השקעות</span><span>{yearSum.operating < 0 ? 'הפסד' : 'רווח'} {shekel(Math.abs(yearSum.operating))}</span></div>
         </section>
       </div>
@@ -240,6 +247,7 @@ function YearTableCard({ t, y, month }: { t: ReturnType<typeof yearTable>; y: nu
           )}
           {section('הוצאות קבועות', t.fixed, 'fixed')}
           {section('הוצאות משתנות', t.variable, 'variable')}
+          <SumRow strong label="סה&quot;כ הוצאות (כולל שכר)" values={t.totals.map((m) => m.expenses)} total={t.year.expenses} />
           <SumRow strong label="רווח מהפעילות" values={t.totals.map((m) => m.operating)} total={t.year.operating} />
           {section('השקעות בעסק', t.investment, 'investment')}
           <SumRow strong label="נשאר אחרי השקעות" values={t.totals.map((m) => m.afterInvestment)} total={t.year.afterInvestment} />
@@ -260,7 +268,11 @@ function TrackCard({ title, t, debtLabel }: { title: string; t: ReturnType<typeo
         <strong className={t.debt > 0 ? 'fin-neg' : ''}>{shekel(t.debt)}</strong>
       </div>
       {t.maccabiOverdue > 0 && <div className="muted">מתוכם {shekel(t.maccabiOverdue)} זיכוי מכבי באיחור</div>}
-      {t.maccabiUpcoming > 0 && <div className="muted">ועוד {shekel(t.maccabiUpcoming)} זיכוי מכבי שעוד לא הגיע זמנו</div>}
+      {t.maccabiUpcoming > 0 && <div className="fin-track-row"><span>עתידי ממכבי</span><strong>{shekel(t.maccabiUpcoming)}</strong></div>}
+      <div className="fin-track-row fin-track-net">
+        <span>סה&quot;כ כולל חייבים{t.maccabiUpcoming > 0 && ' ועתידי'}</span>
+        <strong>{shekel(t.income - t.refunds + t.debt + t.maccabiUpcoming)}</strong>
+      </div>
     </section>
   );
 }

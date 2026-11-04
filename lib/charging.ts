@@ -1,5 +1,5 @@
 import 'server-only';
-import { diffCharges, dropWaived, freePairLessons, planCharges } from './billing';
+import { diffCharges, dropWaived, freePairLessons, planCharges, planSiblingDiscounts, type NewCharge } from './billing';
 import type { PaymentTrack } from './constants';
 import { dmy } from './day';
 import type { DB } from './supabase/server';
@@ -20,6 +20,54 @@ async function loadWaived(db: DB, studentIds: number[]) {
   return (data ?? []) as { teacher_id: number; lesson_date: string; student_id: number; kind: string }[];
 }
 
+/** הנחות אחים מחושבות בנפרד (syncSiblingDiscounts), אז חיוב רגיל של שיעורים לא נוגע בהן */
+const notDiscount = (c: Charge) => c.kind !== 'sibling_discount';
+
+/**
+ * מעדכן את הנחות האחים של התלמידים לפי חיובי השיעורים שלהם, מהתאריך שנבחר בכרטיס ועד היום.
+ * הנחה שכבר קיימת נשארת בסכום שלה, הנחה שנמחקה ביד לא חוזרת, ותלמיד/ה בלי הסימון לא נבדק/ת (מה שכבר נוצר נשאר).
+ * לפני 0059 אין עמודות: אין מה לעדכן
+ */
+export async function syncSiblingDiscounts(db: DB, studentIds: number[]) {
+  const none = { inserted: 0, removed: 0 };
+  if (!studentIds.length) return none;
+  const { data: marked, error } = await db.from('students').select('id, sibling_discount_amount, sibling_discount_from')
+    .in('id', studentIds).eq('sibling_discount', true);
+  if (error) {
+    if (MISSING.includes(error.code)) return none;
+    throw new Error(error.message);
+  }
+  if (!marked?.length) return none;
+  const ids = marked.map((s) => s.id as number);
+  const [charges, waived] = await Promise.all([
+    db.from('lesson_charges').select('*').in('student_id', ids).in('kind', ['lesson', 'sibling_discount']),
+    loadWaived(db, ids),
+  ]);
+  if (charges.error) throw new Error(charges.error.message);
+
+  const insert: NewCharge[] = [];
+  const remove: number[] = [];
+  for (const s of marked) {
+    const from = s.sibling_discount_from as string | null;
+    const mine = (charges.data as Charge[]).filter((c) => c.student_id === s.id);
+    const planned = planSiblingDiscounts(mine.filter(notDiscount), Number(s.sibling_discount_amount), from);
+    // הנחות מלפני התאריך שנבחר (תקופה קודמת) לא נבדקות
+    const existing = mine.filter((c) => !notDiscount(c) && c.lesson_date >= (from ?? ''));
+    const diff = diffCharges(existing, dropWaived(planned, waived));
+    insert.push(...diff.insert);
+    remove.push(...diff.remove);
+  }
+  if (remove.length) {
+    const { error: e } = await db.from('lesson_charges').delete().in('id', remove);
+    if (e) throw new Error(e.message);
+  }
+  if (insert.length) {
+    const { error: e } = await db.from('lesson_charges').insert(insert);
+    if (e) throw new Error(e.message);
+  }
+  return { inserted: insert.length, removed: remove.length };
+}
+
 /**
  * יוצר חיובים לשיעורים של ימים סגורים בטווח (ומוחק חיובים ששייכים לשיעורים שכבר לא מחייבים).
  * teacherId: רק יום של מורה אחד/ת. מחזיר כמה נוספו/נמחקו, וכמה שיעורים לא חויבו כי המסלול לא ידוע
@@ -38,7 +86,9 @@ export async function billClosedDays(db: DB, { from, to, teacherId }: { from: st
   const closed = new Set((closures.data as DayClosure[]).map((c) => `${c.teacher_id}:${c.lesson_date}`));
   const isClosed = (r: { teacher_id: number | null; lesson_date: string }) => closed.has(`${r.teacher_id}:${r.lesson_date}`);
   let dayRows = (rows.data as DayLesson[]).filter(isClosed);
-  let existingCharges = (existing.data as Charge[]).filter(isClosed);
+  let existingCharges = (existing.data as Charge[]).filter(notDiscount).filter(isClosed);
+  // יום שנפתח כבר לא ב-dayRows, אבל הספירה של התלמידים שלו זזה
+  const touched = new Set([...(rows.data as DayLesson[]), ...(existing.data as Charge[])].map((r) => r.student_id));
 
   // שיעורים בזוג: מכל 4 הרביעי חינם, בספירה רציפה מההתחלה. לכן צריך את כל השיעורים בזוג של התלמידים האלה,
   // ושינוי ביום אחד (סגירה, ביטול סגירה, נוכחות) מחייב מחדש גם את הימים הסגורים שאחריו
@@ -62,7 +112,7 @@ export async function billClosedDays(db: DB, { from, to, teacherId }: { from: st
         .in('student_id', [...new Set(later.map((r) => r.student_id))]).gt('lesson_date', to).neq('kind', 'manual');
       if (laterCharges.error) throw new Error(laterCharges.error.message);
       dayRows = [...dayRows, ...later];
-      existingCharges = [...existingCharges, ...(laterCharges.data as Charge[])
+      existingCharges = [...existingCharges, ...(laterCharges.data as Charge[]).filter(notDiscount)
         .filter((c) => laterKeys.has(`${c.teacher_id}:${c.lesson_date}:${c.student_id}`))];
     }
   }
@@ -89,6 +139,7 @@ export async function billClosedDays(db: DB, { from, to, teacherId }: { from: st
     const { error: e } = await db.from('lesson_charges').delete().in('id', remove);
     if (e) throw new Error(e.message);
   }
+  await syncSiblingDiscounts(db, [...touched]);
   return { inserted: insert.length, removed: remove.length, unbilled: plan.unbilled.length };
 }
 
@@ -123,7 +174,7 @@ export async function rebillStudent(db: DB, studentId: number) {
     (r) => lessonLabel(r, instrument),
     freePairLessons(closedRows.filter((r) => r.pair)));
   // חיובים של ימים שכבר לא סגורים לא נבדקים כאן (כמו בחיוב יום)
-  const current = (existing.data as Charge[]).filter((c) => closed.has(`${c.teacher_id}:${c.lesson_date}`));
+  const current = (existing.data as Charge[]).filter(notDiscount).filter((c) => closed.has(`${c.teacher_id}:${c.lesson_date}`));
   const { insert, remove } = diffCharges(current, dropWaived(plan.charges, await loadWaived(db, [studentId])), true);
   const lessonsChanged = new Set([...insert, ...current.filter((c) => remove.includes(c.id))]
     .map((c) => `${c.teacher_id}:${c.lesson_date}`)).size;
@@ -136,6 +187,7 @@ export async function rebillStudent(db: DB, studentId: number) {
     const { error: e } = await db.from('lesson_charges').insert(insert);
     if (e) throw new Error(e.message);
   }
+  await syncSiblingDiscounts(db, [studentId]);
   return { changed: lessonsChanged, unbilled: plan.unbilled.length };
 }
 

@@ -5,7 +5,9 @@ import {
   TEACHER_GENDER_LABELS,
   type CommitmentFund, type Gender, type HealthFund, type Interest, type TeacherGender,
 } from '../constants';
-import { rebillStudent } from '../charging';
+import { SIBLING_DEFAULT_AMOUNT } from '../billing';
+import { rebillStudent, syncSiblingDiscounts } from '../charging';
+import { validDate } from '../day';
 import { addContactToSiblings, removeContactFromSiblings, syncSharedDetails } from '../familySync';
 import { createClient } from '../supabase/server';
 import { overlaps, toMin } from '../time';
@@ -272,6 +274,18 @@ export async function saveStudent(fd: FormData) {
   if (row.payment_track === 'unknown' && row.health_fund === 'private') row.payment_track = 'private';
   if (row.payment_track === 'unknown' && COMMITMENT_FUNDS.includes(row.health_fund as CommitmentFund)) row.payment_track = 'fund_deposit';
 
+  // הנחת אחים: השדות מוצגים רק אחרי 0059. כבוי: התאריך מתאפס, ובסימון הבא מתחילים לספור מחדש
+  const siblingOn = fd.get('sibling_discount') === 'on';
+  const siblingAmount = num(fd, 'sibling_discount_amount');
+  if (siblingOn && (siblingAmount === null || siblingAmount <= 0)) fail(here, 'בהנחת אחים צריך לרשום סכום גדול מ-0');
+  const siblingFrom = str(fd, 'sibling_discount_from');
+  const sibling = fd.get('sibling_discount_field') ? {
+    sibling_discount: siblingOn,
+    sibling_discount_amount: siblingAmount && siblingAmount > 0 ? siblingAmount : SIBLING_DEFAULT_AMOUNT,
+    sibling_discount_from: !siblingOn ? null
+      : validDate(siblingFrom) ? siblingFrom : new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' }),
+  } : {};
+
   const { legacy_track: legacy, ...fields } = row;
   const save = legacy ? (({ payment_track: _, ...rest }) => rest)(fields) : fields;
 
@@ -282,7 +296,7 @@ export async function saveStudent(fd: FormData) {
   if (id) {
     // מה היה לפני השמירה: רק מה ששונה עובר לאחים
     const { data: before } = await db.from('students').select('family_id, email, no_email, contract_signed, card_on_file').eq('id', id).maybeSingle();
-    const { error } = await db.from('students').update({ ...save, ...waiting }).eq('id', id);
+    const { error } = await db.from('students').update({ ...save, ...waiting, ...sibling }).eq('id', id);
     if (error?.code === 'PGRST204') {
       const { error: e } = await db.from('students').update({ ...without(save), ...waiting }).eq('id', id);
       if (e) fail(here, dbMessage(e));
@@ -297,7 +311,15 @@ export async function saveStudent(fd: FormData) {
         fail(here, `נשמר, אבל הפרטים לא עודכנו אצל האחים: ${(e as Error).message}`);
       }
     }
-    const siblingsNote = synced ? ' מייל, חוזה ואשראי עודכנו גם אצל האחים' : '';
+    let discountNote = '';
+    try {
+      const d = await syncSiblingDiscounts(db, [id]);
+      if (d.inserted) discountNote += ` הנחות אחים שנוספו: ${d.inserted}.`;
+      if (d.removed) discountNote += ` הנחות אחים שהוסרו: ${d.removed}.`;
+    } catch (e) {
+      fail(here, `נשמר, אבל הנחות האחים לא חושבו: ${(e as Error).message}`);
+    }
+    const siblingsNote = `${synced ? ' מייל, חוזה ואשראי עודכנו גם אצל האחים.' : ''}${discountNote}`;
     // המסלול השתנה ובחרו לעדכן גם את העבר: חישוב מחדש של החיובים של השיעורים שכבר היו
     if (!legacy && fd.get('rebill_past') === 'yes') {
       let r: Awaited<ReturnType<typeof rebillStudent>>;
@@ -310,7 +332,7 @@ export async function saveStudent(fd: FormData) {
     }
     done(here, `נשמר.${siblingsNote}`);
   }
-  let { data, error } = await db.from('students').insert({ ...save, ...waiting }).select('id').single();
+  let { data, error } = await db.from('students').insert({ ...save, ...waiting, ...sibling }).select('id').single();
   const partial = error?.code === 'PGRST204';
   if (partial) ({ data, error } = await db.from('students').insert({ ...without(save), ...waiting }).select('id').single());
   if (error || !data) fail(here, dbMessage(error!));

@@ -6,7 +6,10 @@ import {
   addCharge, addManualReceipt, addPayment, deleteCharge, deleteReceipt, issueInternal, issueReceipt, markCommitment, stopAfterTrial,
   undoCommitment,
 } from '@/lib/actions/payments';
-import { account, maccabiPart, monthLabel, monthRequest, paymentCoverage, shekel, type ChargeStatus } from '@/lib/billing';
+import {
+  account, maccabiPart, monthLabel, monthRequest, paymentCoverage, shekel, SIBLING_CYCLE, SIBLING_DEFAULT_AMOUNT, SIBLING_TRACKS, siblingCounted,
+  type ChargeStatus,
+} from '@/lib/billing';
 import { CHARGE_KIND_LABELS, CHECK_STATUS_LABELS, PAYMENT_METHOD_LABELS, PAYMENT_TRACK_LABELS } from '@/lib/constants';
 import { dmy } from '@/lib/day';
 import type { BillingSettings, Charge, Payment, Receipt, Student } from '@/lib/types';
@@ -24,6 +27,7 @@ function requestParts(r: NonNullable<ReturnType<typeof monthRequest>>, balance: 
   return [
     r.lessons ? `${r.lessons} שיעורים × ${shekel(r.price)}` : 'אין עוד שיעורים החודש',
     r.free ? `ועוד ${r.free} חינם בזוג` : '',
+    r.discount ? `− הנחת אחים ${shekel(r.discount)}` : '',
     balance < 0 ? `+ חוב ${shekel(-balance)}` : balance > 0 ? `− זכות ${shekel(balance)}` : '',
   ].filter(Boolean).join(' · ');
 }
@@ -45,7 +49,11 @@ export function StudentAccount({ student, charges, payments, receipts, settings,
   const month = today.slice(0, 7);
   // שיעורים שכבר חויבו (למשל יום שנסגר היום) לא נספרים שוב בתשלום מראש
   const charged = charges.filter((c) => c.kind !== 'manual').map((c) => c.lesson_date);
-  const request = monthRequest(weekdays, month, today, student.payment_track, settings, a.balance, charged, pair);
+  const siblingAmount = Number(student.sibling_discount_amount ?? SIBLING_DEFAULT_AMOUNT);
+  const siblingOn = !!student.sibling_discount && SIBLING_TRACKS.includes(student.payment_track);
+  const siblingDone = siblingCounted(charges, student.sibling_discount_from).length;
+  const request = monthRequest(weekdays, month, today, student.payment_track, settings, a.balance, charged, pair,
+    siblingOn ? { amount: siblingAmount, done: siblingDone } : undefined);
   const perLesson = student.payment_track === 'fund_deposit';
   const suggested = request?.total || Math.max(0, -a.balance);
   const maccabi = student.payment_track === 'maccabi_split' || charges.some((c) => c.kind === 'maccabi_later');
@@ -66,6 +74,14 @@ export function StudentAccount({ student, charges, payments, receipts, settings,
         <span className="chip chip-plain">{PAYMENT_TRACK_LABELS[student.payment_track]}</span>
       </div>
       {missing && <div className="flash flash-error">צריך להריץ את 0041_lesson_billing.sql ב-Supabase כדי לראות חיובים</div>}
+      {student.sibling_discount && (
+        <p className="muted">
+          <strong>הנחת אחים:</strong> {shekel(siblingAmount)} לכל {SIBLING_CYCLE} שיעורים
+          {siblingOn
+            ? ` · עוד ${SIBLING_CYCLE - (siblingDone % SIBLING_CYCLE)} שיעורים להנחה הבאה`
+            : ` · לא חלה על המסלול ${PAYMENT_TRACK_LABELS[student.payment_track] ?? student.payment_track}`}
+        </p>
+      )}
 
       <div className="grid grid-4" style={{ marginBottom: 12 }}>
         <div className={`stat ${a.balance < 0 ? 'stat-pending' : 'stat-free'}`}>
@@ -181,7 +197,7 @@ export function StudentAccount({ student, charges, payments, receipts, settings,
                       </td>
                       <td>
                         {c.description || CHARGE_KIND_LABELS[c.kind]}
-                        {c.kind !== 'lesson' && c.kind !== 'manual' && <div className="muted">{CHARGE_KIND_LABELS[c.kind]}</div>}
+                        {c.kind !== 'lesson' && c.kind !== 'manual' && c.kind !== 'sibling_discount' && <div className="muted">{CHARGE_KIND_LABELS[c.kind]}</div>}
                         {c.commitment_ref && <div className="muted" dir="ltr">{c.commitment_ref}</div>}
                       </td>
                       <td className="nowrap">{shekel(Number(c.amount))}</td>

@@ -130,13 +130,14 @@ export const RECEIPT_FIELD_LABELS: Record<ReceiptField, string> = {
   art: 'אומנות',
 };
 
-/** סוג שורת חיוב: מחיר השיעור (או החלק שמשלמים מראש), החלק של מכבי שמשלמים אחר כך, פיקדון, ידני */
-export type ChargeKind = 'lesson' | 'maccabi_later' | 'deposit' | 'manual';
+/** סוג שורת חיוב: מחיר השיעור (או החלק שמשלמים מראש), החלק של מכבי שמשלמים אחר כך, פיקדון, ידני, הנחת אחים (סכום שלילי) */
+export type ChargeKind = 'lesson' | 'maccabi_later' | 'deposit' | 'manual' | 'sibling_discount';
 export const CHARGE_KIND_LABELS: Record<ChargeKind, string> = {
   lesson: 'שיעור',
   maccabi_later: 'זיכוי מכבי',
   deposit: 'פיקדון',
   manual: 'ידני',
+  sibling_discount: 'הנחת אחים',
 };
 /** נוכחות שמחייבת: הגיע/ה, או לא הגיע/ה בלי הודעה */
 export const BILLABLE: Attendance[] = ['present', 'absent'];
@@ -166,7 +167,7 @@ export const SALARY_CATEGORY = 'שכר מורים';
 /** שכר מורים בנפרד. קבועות: חוזרות כל חודש. משתנות: כל חודש, בסכום לא קבוע. השקעה בעסק: חד-פעמי, לא נכנס לרווח מהפעילות */
 export type ExpenseGroup = 'teachers' | 'fixed' | 'variable' | 'investment';
 export const EXPENSE_GROUP_LABELS: Record<ExpenseGroup, string> = {
-  teachers: SALARY_CATEGORY, fixed: 'הוצאה קבועה', variable: 'הוצאה משתנה', investment: 'השקעה בעסק',
+  teachers: 'הוצאת שכר מורים', fixed: 'הוצאה קבועה', variable: 'הוצאה משתנה', investment: 'השקעה בעסק',
 };
 export const FIXED_EXPENSES = [
   'שכירות', 'תשלום להודיה', 'חשמל ומים', 'ארנונה', 'ביטוח', 'הנהלת חשבונות', 'תוכנות ואינטרנט', 'טלפון', 'מיסים',
