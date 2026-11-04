@@ -199,11 +199,11 @@ export function StudentAccount({ student, charges, payments, receipts, settings,
                       </td>
                       <td>{chargeReceipts(c, paidBy).map((r) => <ReceiptChip key={r.id} r={r} />)}</td>
                       <td>
-                        {c.kind === 'manual' && (
+                        {!c.commitment_on && (
                           <form action={deleteCharge}>
                             <input type="hidden" name="id" value={c.id} />
                             <input type="hidden" name="back" value={here} />
-                            <ConfirmButton className="btn btn-xs btn-ghost" message="למחוק את החיוב?">✕</ConfirmButton>
+                            <ConfirmButton className="btn btn-xs btn-ghost" message={deleteChargeMessage(c, paidBy)}>✕</ConfirmButton>
                           </form>
                         )}
                         {c.kind === 'deposit' && c.commitment_on && (
@@ -286,6 +286,16 @@ function ReceiptChip({ r }: { r: Receipt }) {
   return href
     ? <a className="chip chip-plain" href={href} target="_blank" rel="noreferrer" title={r.description}>{label}</a>
     : <span className="chip chip-plain" title={r.description}>{label}</span>;
+}
+
+/** מה קורה כשמוחקים חיוב: חיוב ששולם - הכסף עובר לזכות, חיוב של שיעור - לא נוצר שוב */
+function deleteChargeMessage(c: Charge, paidBy: { paymentId: number | null; amount: number }[]) {
+  const paid = paidBy.reduce((n, x) => n + (x.paymentId ? x.amount : 0), 0);
+  return [
+    'למחוק את החיוב?',
+    paid > 0 && `הוא שולם: ${shekel(paid)} יעברו לזכות ההורים, והקבלה לא משתנה.`,
+    c.kind !== 'manual' && 'החיוב לא ייווצר שוב גם אם מחייבים מחדש את היום.',
+  ].filter(Boolean).join(' ');
 }
 
 /** הקבלות של תשלום, או הפקה ב-SUMIT / הקלדת מספר ביד */

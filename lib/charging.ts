@@ -1,5 +1,5 @@
 import 'server-only';
-import { diffCharges, freePairLessons, planCharges } from './billing';
+import { diffCharges, dropWaived, freePairLessons, planCharges } from './billing';
 import type { PaymentTrack } from './constants';
 import { dmy } from './day';
 import type { DB } from './supabase/server';
@@ -11,6 +11,14 @@ const missingMsg = 'צריך להריץ את 0041_lesson_billing.sql ב-Supabase
 /** "שיעור בזוג פסנתר 20/10/2026" */
 const lessonLabel = (r: DayLesson, instrument: Map<number, string>) =>
   `שיעור ${r.pair ? 'בזוג ' : ''}${r.instrument_id ? instrument.get(r.instrument_id) ?? '' : ''} ${dmy(r.lesson_date)}`.replace(/\s+/g, ' ');
+
+/** חיובים שנמחקו ביד. לפני 0057 הטבלה לא קיימת - אין כאלה */
+async function loadWaived(db: DB, studentIds: number[]) {
+  if (!studentIds.length) return [];
+  const { data, error } = await db.from('waived_charges').select('teacher_id, lesson_date, student_id, kind').in('student_id', studentIds);
+  if (error && !MISSING.includes(error.code)) throw new Error(error.message);
+  return (data ?? []) as { teacher_id: number; lesson_date: string; student_id: number; kind: string }[];
+}
 
 /**
  * יוצר חיובים לשיעורים של ימים סגורים בטווח (ומוחק חיובים ששייכים לשיעורים שכבר לא מחייבים).
@@ -71,7 +79,7 @@ export async function billClosedDays(db: DB, { from, to, teacherId }: { from: st
     (r) => lessonLabel(r, instrument),
     free);
   // רק חיובים של ימים סגורים נבדקים כאן (יום פתוח מטופל בביטול הסגירה)
-  const { insert, remove } = diffCharges(existingCharges, plan.charges);
+  const { insert, remove } = diffCharges(existingCharges, dropWaived(plan.charges, await loadWaived(db, ids)));
 
   if (insert.length) {
     const { error: e } = await db.from('lesson_charges').insert(insert);
@@ -116,7 +124,7 @@ export async function rebillStudent(db: DB, studentId: number) {
     freePairLessons(closedRows.filter((r) => r.pair)));
   // חיובים של ימים שכבר לא סגורים לא נבדקים כאן (כמו בחיוב יום)
   const current = (existing.data as Charge[]).filter((c) => closed.has(`${c.teacher_id}:${c.lesson_date}`));
-  const { insert, remove } = diffCharges(current, plan.charges, true);
+  const { insert, remove } = diffCharges(current, dropWaived(plan.charges, await loadWaived(db, [studentId])), true);
   const lessonsChanged = new Set([...insert, ...current.filter((c) => remove.includes(c.id))]
     .map((c) => `${c.teacher_id}:${c.lesson_date}`)).size;
 

@@ -103,6 +103,16 @@ export function planCharges(
   return { charges: [...charges.values()], unbilled };
 }
 
+/** מסיר מהתוכנית חיובים שנמחקו ביד (waived_charges), כדי שחיוב מחדש לא ייצור אותם שוב */
+export function dropWaived<T extends { teacher_id: number | null; lesson_date: string; student_id: number; kind: string }>(
+  planned: T[], waived: { teacher_id: number; lesson_date: string; student_id: number; kind: string }[],
+): T[] {
+  const key = (c: { teacher_id: number | null; lesson_date: string; student_id: number; kind: string }) =>
+    `${c.teacher_id}:${c.lesson_date}:${c.student_id}:${c.kind}`;
+  const gone = new Set(waived.map(key));
+  return planned.filter((c) => !gone.has(key(c)));
+}
+
 // גם המסלול, הסכום ותאריך התשלום: חיוב שחושב לפי מסלול או מחיר אחר יוחלף
 const exactKey = (c: Parameters<typeof chargeKey>[0] & { track: string; due_date: string }) =>
   `${chargeKey(c)}:${c.track}:${Number(c.amount)}:${c.due_date}`;

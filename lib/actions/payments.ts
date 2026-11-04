@@ -4,9 +4,11 @@ import { monthLabel } from '../billing';
 import { billClosedDays } from '../charging';
 import { PAYMENT_METHODS, type CheckStatus } from '../constants';
 import { validDate } from '../day';
+import { rebillDay } from '../dayLock';
 import { issueInternalReceipt, issueSumitReceipts } from '../receipts';
 import { sumitNextReceiptNumber } from '../sumit';
 import { createClient } from '../supabase/server';
+import type { Charge } from '../types';
 import { backTo, dbMessage, done, fail, num, oneOf, str } from './util';
 
 const HOME = '/payments';
@@ -67,12 +69,35 @@ export async function addCharge(fd: FormData) {
   done(back, amount! < 0 ? 'ההנחה נוספה' : 'החיוב נוסף');
 }
 
-/** מחיקת חיוב ידני (חיובי שיעורים משתנים רק דרך סגירת יום) */
+/**
+ * מחיקת חיוב מדף התלמיד/ה. חיוב של שיעור נרשם גם ב-waived_charges, כדי שחיוב מחדש של היום לא ייצור אותו שוב.
+ * כסף ששילם את החיוב עובר לזכות ההורים. פיקדון שהביאו עליו התחייבות לא נמחק (יש לו "ביטול")
+ */
 export async function deleteCharge(fd: FormData) {
   const db = await createClient();
   const back = backTo(fd, HOME);
-  const { error } = await db.from('lesson_charges').delete().eq('id', num(fd, 'id')!).eq('kind', 'manual');
+  const { data: c, error: ce } = await db.from('lesson_charges').select('*').eq('id', num(fd, 'id')!).maybeSingle<Charge>();
+  if (ce) fail(back, dbMessage(ce));
+  if (!c) fail(back, 'החיוב לא נמצא');
+  if (c!.commitment_on) fail(back, 'על הפיקדון הזה כבר הביאו התחייבות: קודם מבטלים את ההתחייבות');
+  const lesson = c!.kind !== 'manual';
+  if (lesson && c!.teacher_id !== null) {
+    const { error } = await db.from('waived_charges').upsert(
+      { teacher_id: c!.teacher_id, lesson_date: c!.lesson_date, student_id: c!.student_id, kind: c!.kind },
+      { onConflict: 'teacher_id,lesson_date,student_id,kind', ignoreDuplicates: true },
+    );
+    if (error) fail(back, error.code === '42P01' || error.code === 'PGRST205' ? 'צריך להריץ את 0057_waived_charges.sql ב-Supabase' : dbMessage(error));
+  }
+  const { error } = await db.from('lesson_charges').delete().eq('id', c!.id);
   if (error) fail(back, dbMessage(error));
+  if (lesson) {
+    // יום נעול: הסכומים בתמונת המצב של היום מתעדכנים. החיוב כבר נמחק, אז כישלון כאן לא עוצר
+    try {
+      await rebillDay(db, c!.lesson_date);
+    } catch (e) {
+      console.error('rebillDay:', (e as Error).message);
+    }
+  }
   done(back, 'החיוב נמחק');
 }
 

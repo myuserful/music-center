@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  account, addMonths, chargesForLesson, diffCharges, freePairLessons, monthRequest, paymentCoverage, planCharges, planReceipts, remainingLessonDates,
+  account, addMonths, chargesForLesson, diffCharges, dropWaived, freePairLessons, monthRequest, paymentCoverage, planCharges, planReceipts, remainingLessonDates,
   type NewCharge,
 } from './billing';
 import type { PaymentTrack } from './constants';
@@ -22,6 +22,22 @@ const charge = (c: Partial<Charge>): Charge => ({
 const pay = (amount: number, p: Partial<Payment> = {}): Payment => ({
   id: nextId++, student_id: 1, paid_on: '2026-10-01', amount, method: 'cash', reference: '', check_number: '',
   check_bank: '', check_date: null, check_status: null, notes: '', refund: false, maccabi_amount: 0, ...p,
+});
+
+describe('dropWaived', () => {
+  it('חיוב שנמחק ביד לא חוזר בחיוב מחדש, והשאר כן נוצרים', () => {
+    const waived = [{ teacher_id: 1, lesson_date: '2026-10-20', student_id: 1, kind: 'lesson' }];
+    const { charges } = planCharges([row(1), row(2)], () => 'private', S, () => '');
+    const kept = dropWaived(charges, waived);
+    expect(kept.map((c) => c.student_id)).toEqual([2]);
+    expect(diffCharges([], kept).insert.map((c) => c.student_id)).toEqual([2]);
+  });
+
+  it('רק אותו סוג חיוב: השלמת מכבי נשארת כשנמחק החלק הראשון', () => {
+    const waived = [{ teacher_id: 1, lesson_date: '2026-10-20', student_id: 1, kind: 'lesson' }];
+    const { charges } = planCharges([row(1)], () => 'maccabi_split', S, () => '');
+    expect(dropWaived(charges, waived).map((c) => c.kind)).toEqual(['maccabi_later']);
+  });
 });
 
 describe('chargesForLesson', () => {
