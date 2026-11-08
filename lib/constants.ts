@@ -91,20 +91,25 @@ export const ASSIGNEE_LABELS: Record<Assignee, string> = { yanky: 'יענקי', 
 export const TASK_KINDS = ['שיבוץ', 'טלפון להורים', 'מורים', 'תשלומים', 'קופות חולים', 'מנהלה', 'אחר'];
 
 // ---- תשלומים ----
-export type PaymentTrack = 'private' | 'maccabi_full' | 'maccabi_split' | 'fund_deposit' | 'trial' | 'unknown';
-export const PAYMENT_TRACKS: PaymentTrack[] = ['private', 'maccabi_full', 'maccabi_split', 'fund_deposit', 'trial', 'unknown'];
+export type PaymentTrack = 'private' | 'maccabi_full' | 'maccabi_split' | 'fund_deposit' | 'fund_commitment' | 'trial' | 'unknown';
+export const PAYMENT_TRACKS: PaymentTrack[] = ['private', 'maccabi_full', 'maccabi_split', 'fund_deposit', 'fund_commitment', 'trial', 'unknown'];
 export const PAYMENT_TRACK_LABELS: Record<PaymentTrack, string> = {
   private: 'פרטי',
   maccabi_full: 'מכבי: מחיר מלא מראש',
   maccabi_split: 'מכבי: חלק מראש + זיכוי מכבי',
   fund_deposit: 'קופה אחרת: פיקדון עד התחייבות',
+  fund_commitment: 'קופה: התחייבות על כל שיעור, בלי פיקדון (לאומית)',
   trial: 'שיעור ניסיון בלבד (לא ממשיך/ה)',
   unknown: 'לא ידוע / לבירור',
 };
 
-/** קופות שעובדות עם התחייבויות (פיקדון עד שההורים מביאים התחייבות) */
+/** קופות שעובדות עם התחייבויות (פיקדון עד שההורים מביאים התחייבות, ובלאומית התחייבות בלי פיקדון) */
 export type CommitmentFund = 'clalit' | 'leumit' | 'meuhedet';
 export const COMMITMENT_FUNDS: CommitmentFund[] = ['clalit', 'leumit', 'meuhedet'];
+/** המסלול שמתאים לקופה: בלאומית התחייבות בלי פיקדון, בכללית ומאוחדת פיקדון עד התחייבות */
+export const fundTrack = (fund: CommitmentFund): PaymentTrack => (fund === 'leumit' ? 'fund_commitment' : 'fund_deposit');
+/** מסלולים שעובדים עם התחייבויות */
+export const COMMITMENT_TRACKS: PaymentTrack[] = ['fund_deposit', 'fund_commitment'];
 
 export type PaymentMethod = 'cash' | 'credit' | 'transfer' | 'check' | 'standing_order';
 export const PAYMENT_METHODS: PaymentMethod[] = ['cash', 'credit', 'transfer', 'check', 'standing_order'];
@@ -130,12 +135,16 @@ export const RECEIPT_FIELD_LABELS: Record<ReceiptField, string> = {
   art: 'אומנות',
 };
 
-/** סוג שורת חיוב: מחיר השיעור (או החלק שמשלמים מראש), החלק של מכבי שמשלמים אחר כך, פיקדון, ידני, הנחת אחים (סכום שלילי) */
-export type ChargeKind = 'lesson' | 'maccabi_later' | 'deposit' | 'manual' | 'sibling_discount';
+/**
+ * סוג שורת חיוב: מחיר השיעור (או החלק שמשלמים מראש), החלק של מכבי שמשלמים אחר כך, פיקדון,
+ * התחייבות (0 ₪, חסרה עד שמביאים התחייבות), ידני, הנחת אחים (סכום שלילי)
+ */
+export type ChargeKind = 'lesson' | 'maccabi_later' | 'deposit' | 'commitment' | 'manual' | 'sibling_discount';
 export const CHARGE_KIND_LABELS: Record<ChargeKind, string> = {
   lesson: 'שיעור',
   maccabi_later: 'זיכוי מכבי',
   deposit: 'פיקדון',
+  commitment: 'התחייבות',
   manual: 'ידני',
   sibling_discount: 'הנחת אחים',
 };

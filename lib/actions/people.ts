@@ -1,7 +1,7 @@
 'use server';
 
 import {
-  COMMITMENT_FUNDS, DEFAULT_LANGUAGE, GENDER_LABELS, LESSON_MINUTES, HEALTH_FUND_LABELS, INTEREST_LABELS, PAYMENT_TRACKS, STUDENT_STATUSES,
+  COMMITMENT_FUNDS, DEFAULT_LANGUAGE, fundTrack, GENDER_LABELS, LESSON_MINUTES, HEALTH_FUND_LABELS, INTEREST_LABELS, PAYMENT_TRACKS, STUDENT_STATUSES,
   TEACHER_GENDER_LABELS,
   type CommitmentFund, type Gender, type HealthFund, type Interest, type TeacherGender,
 } from '../constants';
@@ -272,7 +272,7 @@ export async function saveStudent(fd: FormData) {
   const waiting = row.status === 'waiting' ? { waiting_reason: str(fd, 'waiting_reason') } : {};
   // המסלול לפי הקופה כשעוד לא נקבע: פרטי, או פיקדון בקופות האחרות. במכבי צריך לבחור אחת משתי האפשרויות
   if (row.payment_track === 'unknown' && row.health_fund === 'private') row.payment_track = 'private';
-  if (row.payment_track === 'unknown' && COMMITMENT_FUNDS.includes(row.health_fund as CommitmentFund)) row.payment_track = 'fund_deposit';
+  if (row.payment_track === 'unknown' && COMMITMENT_FUNDS.includes(row.health_fund as CommitmentFund)) row.payment_track = fundTrack(row.health_fund as CommitmentFund);
 
   // הנחת אחים: השדות מוצגים רק אחרי 0059. כבוי: התאריך מתאפס, ובסימון הבא מתחילים לספור מחדש
   const siblingOn = fd.get('sibling_discount') === 'on';

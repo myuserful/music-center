@@ -58,6 +58,8 @@ export type Student = {
   /** הנחת אחים: סכום לכל 4 שיעורים, ומאיזה תאריך סופרים (לפני 0059: חסר) */
   sibling_discount?: boolean; sibling_discount_amount?: number; sibling_discount_from?: string | null;
   payment_track: PaymentTrack; standing_order: boolean; needs_review: boolean;
+  /** מתי התקשרנו להודיע על המעבר להתחייבויות (לפני 0061: חסר) */
+  commitment_notified_on?: string | null;
 };
 export type Contact = {
   id: number; student_id: number; name: string; relation: string; phone: string; email: string; is_primary: boolean;

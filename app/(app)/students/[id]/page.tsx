@@ -247,6 +247,8 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
           <StudentAccount
             student={s} charges={billing!.charges} payments={billing!.payments} settings={billing!.settings}
             receipts={receipts!.receipts}
+            teachers={all.teachers.filter((t) => t.active || lessons.some((l) => l.teacher_id === t.id))}
+            defaultTeacherId={(lessons.find((l) => l.status === 'confirmed') ?? lessons[0])?.teacher_id ?? null}
             missing={billing!.missing} sumit={sumitConfigured()} hasEmail={contacts.some((c) => c.email)}
             weekdays={[...new Set(all.timedLessons.filter((l) => l.student_id === s.id && l.status === 'confirmed' && !l.pair).map((l) => l.weekday))]}
             pair={{

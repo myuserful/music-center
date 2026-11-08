@@ -119,7 +119,8 @@ export type TrackGroup = 'deposit' | 'private' | 'maccabi' | 'other';
 /** קבוצת המסלול בדוח: פיקדון, פרטי, מכבי. שיעור ניסיון או מסלול לא ידוע = אחר */
 export function trackGroup(track: PaymentTrack | undefined): TrackGroup {
   switch (track) {
-    case 'fund_deposit': return 'deposit';
+    case 'fund_deposit':
+    case 'fund_commitment': return 'deposit';
     case 'private': return 'private';
     case 'maccabi_full':
     case 'maccabi_split': return 'maccabi';

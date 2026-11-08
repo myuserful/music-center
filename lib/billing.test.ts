@@ -341,3 +341,38 @@ describe('הנחת אחים', () => {
     expect(monthRequest([2], '2026-10', '2026-10-20', 'private', S, 0, [], undefined, { amount: 25, done: 0 })?.discount).toBe(0);
   });
 });
+
+describe('לאומית: התחייבות על כל שיעור בלי פיקדון', () => {
+  it('כל שיעור יוצר שורת התחייבות של 0 ₪, ואין מה לבקש מראש', () => {
+    expect(chargesForLesson('fund_commitment', '2026-10-20', S)).toEqual([{ kind: 'commitment', amount: 0, due_date: '2026-10-20' }]);
+    expect(monthRequest([2], '2026-11', '2026-11-01', 'fund_commitment', S, 0)).toBeNull();
+  });
+
+  it('פיקדון ששולם (והפך להתחייבות) נשאר זכות להחזיר, והשיעור מחכה להתחייבות', () => {
+    const c = charge({ kind: 'commitment', track: 'fund_commitment', amount: 0 });
+    const a = account([c], [pay(75)], '2026-11-01');
+    expect(a.balance).toBe(75);
+    expect(a.commitments).toHaveLength(1);
+    expect(a.lines[0].status).toBe('no_commitment');
+    // אחרי ההחזר וההתחייבות: אין זכות ואין חסר
+    const done = account([{ ...c, commitment_on: '2026-11-02' }], [pay(75), pay(75, { refund: true })], '2026-11-03');
+    expect(done.balance).toBe(0);
+    expect(done.commitments).toHaveLength(0);
+    expect(done.lines[0].status).toBe('returned');
+  });
+
+  it('מי שלא שילם פיקדון: אין חוב, רק התחייבות חסרה', () => {
+    const a = account([charge({ kind: 'commitment', track: 'fund_commitment', amount: 0 })], [], '2026-11-01');
+    expect(a.balance).toBe(0);
+    expect(a.commitments).toHaveLength(1);
+  });
+
+  it('מעבר מפיקדון: פיקדון שכבר הביאו עליו התחייבות נשאר, ולא נוצרת עליו שורת התחייבות נוספת', () => {
+    const kept = charge({ kind: 'deposit', track: 'fund_deposit', commitment_on: '2026-10-25' });
+    const open = charge({ kind: 'deposit', track: 'fund_deposit', lesson_date: '2026-10-27', due_date: '2026-10-27' });
+    const { charges } = planCharges([row(1), row(1, 'present', '2026-10-27')], () => 'fund_commitment', S, () => '');
+    const d = diffCharges([kept, open], charges, true);
+    expect(d.remove).toEqual([open.id]);
+    expect(d.insert.map((c) => [c.kind, c.lesson_date])).toEqual([['commitment', '2026-10-27']]);
+  });
+});

@@ -2,7 +2,9 @@ import Link from 'next/link';
 import { Empty, Flash, PageHead, one, type SP } from '@/components/ui';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { DeletePaymentButton } from '@/components/DeletePaymentButton';
-import { addPayment, issueInternal, issueReceipt, rebillMonth, saveBillingSettings, setCheckStatus, testSumit } from '@/lib/actions/payments';
+import {
+  addPayment, issueInternal, issueReceipt, rebillMonth, saveBillingSettings, setCheckStatus, setCommitmentNotified, testSumit,
+} from '@/lib/actions/payments';
 import { account, effectiveAmount, maccabiPart, monthLabel, shekel } from '@/lib/billing';
 import { BILLABLE, DAYS, HEALTH_FUND_LABELS, PAYMENT_METHOD_LABELS, PAYMENT_TRACK_LABELS } from '@/lib/constants';
 import { addDays, dmy, weekdayOf } from '@/lib/day';
@@ -50,7 +52,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: SP 
 
   // החודש
   const monthCharges = billing.charges.filter((c) => c.lesson_date >= first && c.lesson_date <= last);
-  const billedLessons = monthCharges.filter((c) => c.kind === 'lesson' || c.kind === 'deposit').length;
+  const billedLessons = monthCharges.filter((c) => c.kind === 'lesson' || c.kind === 'deposit' || c.kind === 'commitment').length;
   const billedAmount = monthCharges.reduce((n, c) => n + effectiveAmount(c), 0);
   const collected = billing.payments
     .filter((p) => p.paid_on >= first && p.paid_on <= last && p.check_status !== 'bounced')
@@ -65,6 +67,17 @@ export default async function PaymentsPage({ searchParams }: { searchParams: SP 
     .map((l) => ({ ...x, line: l })));
   const deposits = accounts.filter((x) => x.a.deposits.length > 0);
   const toReturn = accounts.filter((x) => x.a.balance > 0 && x.student!.payment_track === 'fund_deposit');
+  // לאומית: התחייבות על כל שיעור בלי פיקדון. להתקשר להודיע, להחזיר פיקדון למי ששילם, ולקבל התחייבויות
+  const accountOf = new Map(accounts.map((x) => [x.id, x.a]));
+  const leumit = all.students
+    .filter((st) => st.payment_track === 'fund_commitment')
+    .map((st) => {
+      const a = accountOf.get(st.id);
+      return { student: st, refund: Math.max(0, a?.balance ?? 0), missing: a?.commitments.length ?? 0, phone: all.primaryContact(st.id)?.phone ?? '' };
+    })
+    .filter((x) => x.student.status === 'active' || x.refund > 0 || x.missing > 0)
+    .sort((x, y) => Number(!!x.student.commitment_notified_on) - Number(!!y.student.commitment_notified_on)
+      || y.refund - x.refund || y.missing - x.missing);
   const standingDue = debtors.filter((x) => x.student!.standing_order);
   const pendingChecks = billing.payments.filter((p) => p.check_status === 'pending')
     .sort((a, b) => (a.check_date ?? '').localeCompare(b.check_date ?? ''));
@@ -197,9 +210,46 @@ export default async function PaymentsPage({ searchParams }: { searchParams: SP 
           )}
         </section>
 
+        {leumit.length > 0 && (
+          <section className="card">
+            <h2>לאומית: התחייבות על כל שיעור, בלי פיקדון</h2>
+            <p className="muted">
+              מתקשרים להורים להודיע. מי ששילם פיקדון מקבל אותו בחזרה (כפתור &quot;החזר&quot; בכרטיס), ועל כל שיעור שהתקיים צריך להביא התחייבות.
+              {' '}הודענו: {leumit.filter((x) => x.student.commitment_notified_on).length} מתוך {leumit.length}
+              {' '}· להחזיר: {shekel(leumit.reduce((n, x) => n + x.refund, 0))}
+              {' '}· התחייבויות חסרות: {leumit.reduce((n, x) => n + x.missing, 0)}
+            </p>
+            <ul className="list">
+              {leumit.map(({ student: st, refund, missing, phone }) => (
+                <li key={st.id}>
+                  <div>
+                    <Link href={`/students/${st.id}#account`}>{fullName(st)}</Link>
+                    <div className="muted">
+                      {phone && <a href={`tel:${phone}`} dir="ltr">{phone}</a>}
+                      {phone && ' · '}
+                      {missing ? `${missing} התחייבויות חסרות` : 'אין התחייבויות חסרות'}
+                      {refund > 0 && ` · להחזיר ${shekel(refund)}`}
+                    </div>
+                  </div>
+                  <form action={setCommitmentNotified}>
+                    <input type="hidden" name="student_id" value={st.id} />
+                    <input type="hidden" name="back" value={back} />
+                    {st.commitment_notified_on ? (
+                      <>
+                        <input type="hidden" name="on" value="0" />
+                        <button className="btn btn-xs btn-ghost" title="ביטול הסימון">✓ הודענו {dmy(st.commitment_notified_on)}</button>
+                      </>
+                    ) : <button className="btn btn-xs btn-primary">התקשרנו והודענו</button>}
+                  </form>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         <section className="card">
           <h2>פיקדונות שמחכים להתחייבות ({deposits.reduce((n, x) => n + x.a.deposits.length, 0)})</h2>
-          <p className="muted">כללית, מאוחדת ולאומית. כשההורים מביאים התחייבות מסמנים בכרטיס התלמיד/ה, והפיקדון חוזר אליהם</p>
+          <p className="muted">כללית ומאוחדת. כשההורים מביאים התחייבות מסמנים בכרטיס התלמיד/ה, והפיקדון חוזר אליהם</p>
           {deposits.length === 0 ? <Empty>אין</Empty> : (
             <ul className="list">
               {deposits.map(({ id, student, a }) => (

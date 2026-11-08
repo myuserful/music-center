@@ -59,6 +59,8 @@ export default async function FinancePage({ searchParams }: { searchParams: SP }
   const pay = await monthPayroll(db, all.teachers, month.slice(0, 7), today);
   // הרווח של החודש: אחרי כל שכר החודש, גם מה שעוד לא שולם
   const operating = sum.operating - pay.left.remaining;
+  // אחרי כל ההכנסות, גם חייבים וזיכויי מכבי עתידיים, וכל ההוצאות, גם שכר שעוד לא שולם
+  const forecast = operating + totalDebt + maccabiUpcoming;
 
   const canCopy = transactions.some((t) => t.recurring && inMonth(t.occurred_on, prevMonth));
 
@@ -112,6 +114,11 @@ export default async function FinancePage({ searchParams }: { searchParams: SP }
             <span>סה&quot;כ הכנסות כולל חייבים ועתידי</span>
             <strong className="fin-track-in">{shekel(sum.income - sum.refunds + totalDebt + maccabiUpcoming)}</strong>
           </div>
+          <div className="fin-track-row fin-track-net">
+            <span>{forecast < 0 ? 'הפסד צפוי' : 'רווח צפוי'} אחרי כל ההכנסות וההוצאות</span>
+            <strong className={forecast < 0 ? 'fin-neg' : 'fin-track-in'}>{shekel(Math.abs(forecast))}</strong>
+          </div>
+          <div className="muted">חייבים ועתידי: כל מה שפתוח, גם מחודשים אחרים. הוצאות: של החודש הזה</div>
           <div className="fin-track-row muted"><span>מתחילת {y}, לפי שכר ששולם, לפני השקעות</span><span>{yearSum.operating < 0 ? 'הפסד' : 'רווח'} {shekel(Math.abs(yearSum.operating))}</span></div>
         </section>
       </div>

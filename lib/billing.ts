@@ -29,6 +29,8 @@ export function upfrontPrice(track: PaymentTrack, s: BillingSettings): number | 
     case 'maccabi_full': return Number(s.price_maccabi_full);
     case 'maccabi_split': return Number(s.price_maccabi_upfront);
     case 'fund_deposit': return Number(s.price_fund_deposit);
+    // לאומית: לא משלמים, מביאים התחייבות על כל שיעור
+    case 'fund_commitment': return 0;
     case 'trial': return Number(s.price_trial ?? 55);
     // 'unknown', או ערך ישן מלפני 0041
     default: return null;
@@ -41,7 +43,7 @@ export function chargesForLesson(
 ): { kind: ChargeKind; amount: number; due_date: string }[] | null {
   const upfront = upfrontPrice(track, s);
   if (upfront === null) return null;
-  const kind: ChargeKind = track === 'fund_deposit' ? 'deposit' : 'lesson';
+  const kind: ChargeKind = track === 'fund_deposit' ? 'deposit' : track === 'fund_commitment' ? 'commitment' : 'lesson';
   const rows: { kind: ChargeKind; amount: number; due_date: string }[] = [{ kind, amount: upfront, due_date: date }];
   if (track === 'maccabi_split') {
     rows.push({ kind: 'maccabi_later', amount: Number(s.price_maccabi_later), due_date: addMonths(date, Number(s.maccabi_later_months)) });
@@ -120,14 +122,17 @@ const exactKey = (c: Parameters<typeof chargeKey>[0] & { track: string; due_date
 /**
  * מה לשנות כדי שהחיובים הקיימים יתאימו לתוכנית. חיוב שכבר קיים נשאר כמו שהוא (גם אם המחיר השתנה מאז).
  * exact: חיוב שהמסלול, הסכום או תאריך התשלום שלו שונים מהתוכנית מוחלף (חישוב מחדש אחרי שינוי מסלול).
- * פיקדון שכבר הביאו עליו התחייבות לא נמחק
+ * פיקדון (או התחייבות) שכבר הביאו עליו התחייבות לא נמחק, ועל אותו שיעור לא נוצר פיקדון או התחייבות נוספים
  */
 export function diffCharges(existing: Charge[], planned: NewCharge[], exact = false): { insert: NewCharge[]; remove: number[] } {
   const key = exact ? exactKey : chargeKey;
   const have = new Set(existing.map(key));
   const want = new Set(planned.map(key));
+  const lessonOf = (c: { teacher_id: number | null; lesson_date: string; student_id: number }) => `${c.teacher_id}:${c.lesson_date}:${c.student_id}`;
+  const committed = new Set(existing.filter((c) => c.commitment_on).map(lessonOf));
+  const commitmentKind = (c: NewCharge) => c.kind === 'deposit' || c.kind === 'commitment';
   return {
-    insert: planned.filter((c) => !have.has(key(c))),
+    insert: planned.filter((c) => !have.has(key(c)) && !(commitmentKind(c) && committed.has(lessonOf(c)))),
     remove: existing.filter((c) => c.kind !== 'manual' && !want.has(key(c)) && !c.commitment_on).map((c) => c.id),
   };
 }
@@ -157,10 +162,12 @@ export function planSiblingDiscounts(charges: Charge[], amount: number, from: st
   }));
 }
 
-/** סכום החיוב בפועל: פיקדון שהביאו עליו התחייבות לא נספר (הכסף חוזר להורים) */
-export const effectiveAmount = (c: Charge) => (c.kind === 'deposit' && c.commitment_on ? 0 : Number(c.amount));
+/** סכום החיוב בפועל: פיקדון שהביאו עליו התחייבות לא נספר (הכסף חוזר להורים), והתחייבות היא תמיד 0 */
+export const effectiveAmount = (c: Charge) =>
+  (c.kind === 'commitment' || (c.kind === 'deposit' && c.commitment_on) ? 0 : Number(c.amount));
 
-export type ChargeStatus = 'paid' | 'partial' | 'unpaid' | 'overdue' | 'upcoming' | 'returned';
+/** returned = הביאו התחייבות (על פיקדון או על שיעור בלאומית), no_commitment = שיעור בלאומית שעוד לא הביאו עליו התחייבות */
+export type ChargeStatus = 'paid' | 'partial' | 'unpaid' | 'overdue' | 'upcoming' | 'returned' | 'no_commitment';
 /** paidBy: אילו תשלומים כיסו את החיוב ובכמה (null = הנחה ידנית) */
 export type ChargeLine = { charge: Charge; covered: number; status: ChargeStatus; paidBy: { paymentId: number | null; amount: number }[] };
 
@@ -204,7 +211,8 @@ export function account(charges: Charge[], payments: Payment[], today: string) {
   const sorted = [...charges].sort((a, b) => a.due_date.localeCompare(b.due_date) || a.id - b.id);
   const lines: ChargeLine[] = sorted.map((c) => {
     const amount = effectiveAmount(c);
-    if (c.kind === 'deposit' && c.commitment_on) return { charge: c, covered: 0, status: 'returned', paidBy: [] };
+    if ((c.kind === 'deposit' || c.kind === 'commitment') && c.commitment_on) return { charge: c, covered: 0, status: 'returned', paidBy: [] };
+    if (c.kind === 'commitment') return { charge: c, covered: 0, status: 'no_commitment', paidBy: [] };
     if (amount <= 0) return { charge: c, covered: amount, status: 'paid', paidBy: [] };
     const paidBy: ChargeLine['paidBy'] = [];
     let covered = 0;
@@ -240,6 +248,8 @@ export function account(charges: Charge[], payments: Payment[], today: string) {
     maccabiCredit: pools.maccabi.reduce((n, c) => n + c.left, 0),
     /** פיקדונות שעוד לא הביאו עליהם התחייבות */
     deposits: charges.filter((c) => c.kind === 'deposit' && !c.commitment_on),
+    /** שיעורים בלאומית שעוד לא הביאו עליהם התחייבות */
+    commitments: charges.filter((c) => c.kind === 'commitment' && !c.commitment_on).sort((x, y) => x.lesson_date.localeCompare(y.lesson_date)),
   };
 }
 
@@ -261,7 +271,7 @@ export function remainingLessonDates(weekdays: number[], month: string, today: s
 
 /**
  * כמה לבקש מראש עד סוף החודש: השיעורים הקבועים שנשארו בחודש (ועוד לא חויבו) × המחיר מראש, פחות הזכות (או ועוד החוב).
- * רק בפרטי ובמכבי. בקופות האחרות משלמים פיקדון על כל שיעור, לא מראש לחודש (null).
+ * רק בפרטי ובמכבי. בקופות האחרות משלמים פיקדון על כל שיעור (או מביאים התחייבות), לא מראש לחודש (null).
  * לא מתחשב בחגים וחופשות
  */
 export function monthRequest(
@@ -273,7 +283,7 @@ export function monthRequest(
 ) {
   const price = upfrontPrice(track, s);
   // בקופות האחרות משלמים על כל שיעור; שיעור ניסיון - לא ממשיכים, אין מה לבקש מראש
-  if (price === null || track === 'fund_deposit' || track === 'trial') return null;
+  if (price === null || track === 'fund_deposit' || track === 'fund_commitment' || track === 'trial') return null;
   const regular = remainingLessonDates(weekdays, month, today, charged).length;
   const pairDates = pair ? remainingLessonDates(pair.weekdays, month, today, charged) : [];
   const free = pairDates.filter((_, i) => (pair!.done + i + 1) % PAIR_CYCLE === 0).length;

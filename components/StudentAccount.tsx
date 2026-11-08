@@ -3,23 +3,24 @@ import { DeletePaymentButton } from '@/components/DeletePaymentButton';
 import { PaymentFields } from '@/components/PaymentFields';
 import { Empty } from '@/components/ui';
 import {
-  addCharge, addManualReceipt, addPayment, deleteCharge, deleteReceipt, issueInternal, issueReceipt, markCommitment, stopAfterTrial,
+  addCharge, addLessonCharge, addManualReceipt, addPayment, deleteCharge, deleteReceipt, issueInternal, issueReceipt, markCommitment, stopAfterTrial,
   undoCommitment,
 } from '@/lib/actions/payments';
 import {
-  account, maccabiPart, monthLabel, monthRequest, paymentCoverage, shekel, SIBLING_CYCLE, SIBLING_DEFAULT_AMOUNT, SIBLING_TRACKS, siblingCounted,
+  account, chargesForLesson, maccabiPart, monthLabel, monthRequest, paymentCoverage, shekel, SIBLING_CYCLE, SIBLING_DEFAULT_AMOUNT, SIBLING_TRACKS, siblingCounted,
   type ChargeStatus,
 } from '@/lib/billing';
 import { CHARGE_KIND_LABELS, CHECK_STATUS_LABELS, PAYMENT_METHOD_LABELS, PAYMENT_TRACK_LABELS } from '@/lib/constants';
 import { dmy } from '@/lib/day';
-import type { BillingSettings, Charge, Payment, Receipt, Student } from '@/lib/types';
+import { fullName, type BillingSettings, type Charge, type Payment, type Receipt, type Student, type Teacher } from '@/lib/types';
 
 const STATUS_LABELS: Record<ChargeStatus, string> = {
   paid: 'שולם', partial: 'שולם חלקית', unpaid: 'לא שולם', overdue: 'באיחור', upcoming: 'עתידי', returned: 'הביאו התחייבות',
+  no_commitment: 'חסרה התחייבות',
 };
 const STATUS_CLASS: Record<ChargeStatus, string> = {
   paid: 'badge-confirmed', partial: 'badge-pending', unpaid: 'badge-pending', overdue: 'badge-review',
-  upcoming: 'badge-muted', returned: 'badge-undecided',
+  upcoming: 'badge-muted', returned: 'badge-undecided', no_commitment: 'badge-pending',
 };
 
 /** ממה מורכב הסכום לבקשה: השיעורים שנשארו בחודש, ועוד החוב (או פחות הזכות) */
@@ -33,8 +34,12 @@ function requestParts(r: NonNullable<ReturnType<typeof monthRequest>>, balance: 
 }
 
 /** החשבון של תלמיד/ה: יתרה, כמה לבקש החודש, תשלומים, פיקדונות וחיובים */
-export function StudentAccount({ student, charges, payments, receipts, settings, weekdays, pair, today, missing, sumit, hasEmail }: {
+export function StudentAccount({
+  student, charges, payments, receipts, settings, weekdays, pair, today, missing, sumit, hasEmail, teachers, defaultTeacherId,
+}: {
   student: Student; charges: Charge[]; payments: Payment[]; receipts: Receipt[]; settings: BillingSettings;
+  /** לחיוב שיעור נוסף: המורים, וברירת המחדל - המורה הקבוע/ה של התלמיד/ה */
+  teachers: Teacher[]; defaultTeacherId: number | null;
   /** יש מפתחות SUMIT: אפשר להפיק קבלות */
   sumit: boolean;
   /** יש מייל לאחד מאנשי הקשר (לשליחת הקבלה) */
@@ -48,13 +53,21 @@ export function StudentAccount({ student, charges, payments, receipts, settings,
   const a = account(charges, payments, today);
   const month = today.slice(0, 7);
   // שיעורים שכבר חויבו (למשל יום שנסגר היום) לא נספרים שוב בתשלום מראש
-  const charged = charges.filter((c) => c.kind !== 'manual').map((c) => c.lesson_date);
+  // (שיעור נוסף שחויב ביד - בלי מורה - לא תופס את מקומו של שיעור קבוע)
+  const charged = charges.filter((c) => c.kind !== 'manual' && c.teacher_id !== null).map((c) => c.lesson_date);
+  /** מה יחויב על שיעור נוסף לפי המסלול: "55 ₪ עכשיו + 95 ₪ זיכוי מכבי עתידי" */
+  const lessonPlan = chargesForLesson(student.payment_track, today, settings)?.map((p) =>
+    p.kind === 'maccabi_later' ? `${shekel(p.amount)} זיכוי מכבי עתידי (עד ${settings.maccabi_later_months} חודשים)`
+      : p.kind === 'deposit' ? `פיקדון ${shekel(p.amount)}`
+      : p.kind === 'commitment' ? 'התחייבות (בלי תשלום)'
+      : `${shekel(p.amount)} עכשיו`).join(' + ');
   const siblingAmount = Number(student.sibling_discount_amount ?? SIBLING_DEFAULT_AMOUNT);
   const siblingOn = !!student.sibling_discount && SIBLING_TRACKS.includes(student.payment_track);
   const siblingDone = siblingCounted(charges, student.sibling_discount_from).length;
   const request = monthRequest(weekdays, month, today, student.payment_track, settings, a.balance, charged, pair,
     siblingOn ? { amount: siblingAmount, done: siblingDone } : undefined);
   const perLesson = student.payment_track === 'fund_deposit';
+  const commitmentTrack = student.payment_track === 'fund_commitment';
   const suggested = request?.total || Math.max(0, -a.balance);
   const maccabi = student.payment_track === 'maccabi_split' || charges.some((c) => c.kind === 'maccabi_later');
   const receiptsOf = (paymentId: number) => receipts.filter((r) => r.payment_id === paymentId);
@@ -89,10 +102,11 @@ export function StudentAccount({ student, charges, payments, receipts, settings,
           <div className="stat-label">{a.balance < 0 ? 'חוב' : a.balance > 0 ? 'זכות (יתרה לשיעורים הבאים)' : 'יתרה'}</div>
         </div>
         <div className="stat">
-          <div className="stat-num">{request ? shekel(request.total) : perLesson ? shekel(Math.max(0, -a.balance)) : '—'}</div>
+          <div className="stat-num">{request ? shekel(request.total) : perLesson || commitmentTrack ? shekel(Math.max(0, -a.balance)) : '—'}</div>
           <div className="stat-label">
             {request ? `לתשלום עד סוף ${monthLabel(`${month}-01`)} (${requestParts(request, a.balance)})`
               : perLesson ? `לתשלום עכשיו (פיקדון ${shekel(Number(settings.price_fund_deposit))} על כל שיעור, לא מראש)`
+              : commitmentTrack ? 'לתשלום עכשיו (בלי פיקדון: על כל שיעור מביאים התחייבות)'
               : 'מסלול לא ידוע: אי אפשר לחשב'}
           </div>
         </div>
@@ -109,6 +123,15 @@ export function StudentAccount({ student, charges, payments, receipts, settings,
           <div className="stat stat-undecided">
             <div className="stat-num">{a.deposits.length}</div>
             <div className="stat-label">פיקדונות שמחכים להתחייבות ({shekel(a.deposits.reduce((n, c) => n + Number(c.amount), 0))})</div>
+          </div>
+        )}
+        {(commitmentTrack || a.commitments.length > 0) && (
+          <div className={`stat ${a.commitments.length > 0 ? 'stat-pending' : 'stat-free'}`}>
+            <div className="stat-num">{a.commitments.length}</div>
+            <div className="stat-label">
+              התחייבויות חסרות (שיעור אחד = התחייבות אחת)
+              {commitmentTrack && (student.commitment_notified_on ? ` · הודענו להורים ב-${dmy(student.commitment_notified_on)}` : ' · עוד לא הודענו להורים')}
+            </div>
           </div>
         )}
       </div>
@@ -158,6 +181,29 @@ export function StudentAccount({ student, charges, payments, receipts, settings,
             </select>
           </label>
           <ConfirmButton className="btn btn-xs" message="לרשום החזר להורים? הסכום יורד מהזכות">החזר</ConfirmButton>
+        </form>
+      )}
+
+      {a.commitments.length > 0 && (
+        <form action={markCommitment} className="deposit-box">
+          <input type="hidden" name="back" value={here} />
+          <h3>שיעורים שחסרה עליהם התחייבות</h3>
+          <p className="muted">
+            בלאומית לא משלמים פיקדון: על כל שיעור שהתקיים צריך להביא התחייבות. מסמנים את השיעורים שההורים הביאו עליהם התחייבות.
+            {a.balance > 0 && ` יש להורים זכות של ${shekel(a.balance)} (פיקדון ששילמו): מחזירים בכפתור "החזר".`}
+          </p>
+          <div className="checks">
+            {a.commitments.map((c) => (
+              <label key={c.id} className="check">
+                <input type="checkbox" name="id" value={c.id} defaultChecked /> {dmy(c.lesson_date)}
+              </label>
+            ))}
+          </div>
+          <div className="row-form">
+            <label>מספר התחייבות<input name="commitment_ref" dir="ltr" /></label>
+            <label>תאריך<input name="commitment_on" type="date" defaultValue={today} /></label>
+            <button className="btn btn-xs btn-primary">התקבלה התחייבות</button>
+          </div>
         </form>
       )}
 
@@ -222,11 +268,11 @@ export function StudentAccount({ student, charges, payments, receipts, settings,
                             <ConfirmButton className="btn btn-xs btn-ghost" message={deleteChargeMessage(c, paidBy)}>✕</ConfirmButton>
                           </form>
                         )}
-                        {c.kind === 'deposit' && c.commitment_on && (
+                        {(c.kind === 'deposit' || c.kind === 'commitment') && c.commitment_on && (
                           <form action={undoCommitment}>
                             <input type="hidden" name="id" value={c.id} />
                             <input type="hidden" name="back" value={here} />
-                            <ConfirmButton className="btn btn-xs btn-ghost" message="לבטל את ההתחייבות? הפיקדון יחזור להיות חיוב">ביטול</ConfirmButton>
+                            <ConfirmButton className="btn btn-xs btn-ghost" message={c.kind === 'deposit' ? 'לבטל את ההתחייבות? הפיקדון יחזור להיות חיוב' : 'לבטל את ההתחייבות? השיעור יחזור להיות "חסרה התחייבות"'}>ביטול</ConfirmButton>
                           </form>
                         )}
                       </td>
@@ -243,6 +289,25 @@ export function StudentAccount({ student, charges, payments, receipts, settings,
             <label>סכום<input name="amount" type="number" step="any" placeholder="הנחה: מספר שלילי" required /></label>
             <button className="btn btn-xs">+ הוספה</button>
           </form>
+          <form action={addLessonCharge} className="row-form" style={{ marginTop: 8 }}>
+            <input type="hidden" name="student_id" value={student.id} />
+            <input type="hidden" name="back" value={here} />
+            <label>
+              חיוב שיעור
+              <select name="teacher_id" defaultValue={defaultTeacherId ?? ''} required>
+                {!defaultTeacherId && <option value="">בחירת מורה...</option>}
+                {teachers.map((t) => <option key={t.id} value={t.id}>{fullName(t)}</option>)}
+              </select>
+            </label>
+            <label title="לא חובה. בלי תאריך החיוב נרשם להיום">מתי (לא חובה)<input name="date" type="date" /></label>
+            <label className="check"><input type="checkbox" name="pay_teacher" value="1" defaultChecked /> לשלם למורה</label>
+            <button className="btn btn-xs" disabled={!lessonPlan}>+ שיעור</button>
+          </form>
+          <p className="muted">
+            {lessonPlan
+              ? `לפי ${PAYMENT_TRACK_LABELS[student.payment_track]}: ${lessonPlan}`
+              : 'אין מסלול תשלום עם מחיר: קודם בוחרים מסלול'}
+          </p>
         </div>
 
         <div>

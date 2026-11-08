@@ -1,14 +1,14 @@
 'use server';
 
-import { monthLabel } from '../billing';
-import { billClosedDays } from '../charging';
-import { PAYMENT_METHODS, type CheckStatus } from '../constants';
+import { chargesForLesson, monthLabel, shekel } from '../billing';
+import { billClosedDays, syncSiblingDiscounts } from '../charging';
+import { LESSON_MINUTES, PAYMENT_METHODS, type CheckStatus, type PaymentTrack } from '../constants';
 import { validDate } from '../day';
 import { rebillDay } from '../dayLock';
 import { issueInternalReceipt, issueSumitReceipts } from '../receipts';
 import { sumitNextReceiptNumber } from '../sumit';
 import { createClient } from '../supabase/server';
-import type { Charge } from '../types';
+import { fullName, type BillingSettings, type Charge } from '../types';
 import { backTo, dbMessage, done, fail, num, oneOf, str } from './util';
 
 const HOME = '/payments';
@@ -70,6 +70,57 @@ export async function addCharge(fd: FormData) {
 }
 
 /**
+ * שיעור נוסף שמחויב ביד מדף התלמיד/ה, לפי מסלול התשלום (למשל מכבי חלק: חלק עכשיו וחלק זיכוי עתידי).
+ * date: מתי השיעור (אופציונלי, ברירת מחדל היום). pay_teacher: גם לשלם למורה (תוספת זמן של שיעור בשכר באותו תאריך).
+ * החיוב נשמר בלי teacher_id, כדי שחיוב מחדש של ימים סגורים לא ימחק אותו (אין לו שורה ביומן)
+ */
+export async function addLessonCharge(fd: FormData) {
+  const db = await createClient();
+  const studentId = num(fd, 'student_id')!;
+  const back = backTo(fd, `/students/${studentId}`);
+  const teacherId = num(fd, 'teacher_id');
+  if (!teacherId) fail(back, 'יש לבחור מורה');
+  const given = str(fd, 'date');
+  if (given && !validDate(given)) fail(back, 'תאריך לא תקין');
+  const date = given || today();
+
+  const [student, teacher, settings] = await Promise.all([
+    db.from('students').select('first_name, last_name, payment_track').eq('id', studentId).single(),
+    db.from('teachers').select('first_name, last_name').eq('id', teacherId!).single(),
+    db.from('billing_settings').select('*').single(),
+  ]);
+  const error = [student, teacher, settings].find((r) => r.error)?.error;
+  if (error) fail(back, dbMessage(error));
+  const track = student.data!.payment_track as PaymentTrack;
+  const plan = chargesForLesson(track, date, settings.data as BillingSettings);
+  if (!plan) fail(back, 'למסלול התשלום של התלמיד/ה אין מחיר: קודם בוחרים מסלול');
+
+  const teacherName = fullName(teacher.data);
+  const description = `שיעור נוסף · ${teacherName}${given ? '' : ' (תאריך לא נקבע)'}`;
+  const { error: ie } = await db.from('lesson_charges').insert(plan!.map((p) => ({
+    student_id: studentId, teacher_id: null, lesson_date: date, track, description, ...p,
+  })));
+  if (ie) fail(back, dbMessage(ie));
+
+  try {
+    await syncSiblingDiscounts(db, [studentId]);
+  } catch (e) {
+    console.error('syncSiblingDiscounts:', (e as Error).message);
+  }
+
+  const total = plan!.reduce((n, p) => n + p.amount, 0);
+  if (str(fd, 'pay_teacher') === '1') {
+    const { error: te } = await db.from('teacher_extras').insert({
+      teacher_id: teacherId, extra_date: date, minutes: LESSON_MINUTES, amount: null,
+      reason: `שיעור נוסף: ${fullName(student.data)}`,
+    });
+    if (te) fail(back, `השיעור חויב, אבל לא נוסף לשכר של ${teacherName}: ${dbMessage(te)}`);
+    done(back, `השיעור חויב (${shekel(total)}) ונוסף לשכר של ${teacherName}`);
+  }
+  done(back, `השיעור חויב (${shekel(total)}), בלי תשלום למורה`);
+}
+
+/**
  * מחיקת חיוב מדף התלמיד/ה. חיוב של שיעור נרשם גם ב-waived_charges, כדי שחיוב מחדש של היום לא ייצור אותו שוב.
  * כסף ששילם את החיוב עובר לזכות ההורים. פיקדון שהביאו עליו התחייבות לא נמחק (יש לו "ביטול")
  */
@@ -79,7 +130,7 @@ export async function deleteCharge(fd: FormData) {
   const { data: c, error: ce } = await db.from('lesson_charges').select('*').eq('id', num(fd, 'id')!).maybeSingle<Charge>();
   if (ce) fail(back, dbMessage(ce));
   if (!c) fail(back, 'החיוב לא נמצא');
-  if (c!.commitment_on) fail(back, 'על הפיקדון הזה כבר הביאו התחייבות: קודם מבטלים את ההתחייבות');
+  if (c!.commitment_on) fail(back, 'על השיעור הזה כבר הביאו התחייבות: קודם מבטלים את ההתחייבות');
   const lesson = c!.kind !== 'manual';
   if (lesson && c!.teacher_id !== null) {
     const { error } = await db.from('waived_charges').upsert(
@@ -101,27 +152,39 @@ export async function deleteCharge(fd: FormData) {
   done(back, 'החיוב נמחק');
 }
 
-/** ההורים הביאו התחייבות: הפיקדונות שנבחרו חוזרים אליהם (נשארים כזכות עד שמחזירים) */
+/** ההורים הביאו התחייבות: הפיקדונות שנבחרו חוזרים אליהם (נשארים כזכות עד שמחזירים). בלאומית: השיעורים מסומנים שיש עליהם התחייבות */
 export async function markCommitment(fd: FormData) {
   const db = await createClient();
   const back = backTo(fd, HOME);
   const ids = fd.getAll('id').map(Number).filter(Boolean);
   if (!ids.length) fail(back, 'לא נבחרו שיעורים');
   const date = validDate(str(fd, 'commitment_on')) ? str(fd, 'commitment_on') : today();
-  const { error } = await db.from('lesson_charges')
+  const { data, error } = await db.from('lesson_charges')
     .update({ commitment_on: date, commitment_ref: str(fd, 'commitment_ref') })
-    .in('id', ids).eq('kind', 'deposit');
+    .in('id', ids).in('kind', ['deposit', 'commitment'])
+    .select('kind');
   if (error) fail(back, dbMessage(error));
-  done(back, `התחייבות נרשמה ל-${ids.length} שיעורים. הפיקדון עבר לזכות ההורים`);
+  const deposit = (data ?? []).some((c) => c.kind === 'deposit');
+  done(back, `התחייבות נרשמה ל-${ids.length} שיעורים${deposit ? '. הפיקדון עבר לזכות ההורים' : ''}`);
 }
 
 export async function undoCommitment(fd: FormData) {
   const db = await createClient();
   const back = backTo(fd, HOME);
   const { error } = await db.from('lesson_charges').update({ commitment_on: null, commitment_ref: '' })
-    .eq('id', num(fd, 'id')!).eq('kind', 'deposit');
+    .eq('id', num(fd, 'id')!).in('kind', ['deposit', 'commitment']);
   if (error) fail(back, dbMessage(error));
-  done(back, 'ההתחייבות בוטלה. הפיקדון חזר להיות חיוב');
+  done(back, 'ההתחייבות בוטלה');
+}
+
+/** לאומית: סימון שהתקשרנו להורים והודענו על המעבר להתחייבויות (on=0 מבטל) */
+export async function setCommitmentNotified(fd: FormData) {
+  const db = await createClient();
+  const back = backTo(fd, '/payments');
+  const on = str(fd, 'on') !== '0';
+  const { error } = await db.from('students').update({ commitment_notified_on: on ? today() : null }).eq('id', num(fd, 'student_id')!);
+  if (error) fail(back, error.code === 'PGRST204' || error.code === '42703' ? 'צריך להריץ את 0061_fund_commitment.sql ב-Supabase' : dbMessage(error));
+  done(back, on ? 'סומן שהודענו' : 'הסימון בוטל');
 }
 
 // ---- תשלומים ----
@@ -289,7 +352,8 @@ export async function stopAfterTrial(fd: FormData) {
 
   // החיובים של השיעורים (חוץ מידניים ומפיקדון שכבר הביאו עליו התחייבות) נמחקים ונוצרים מחדש במחיר שיעור ניסיון
   const { data: old, error: ce } = await db.from('lesson_charges').select('id, lesson_date')
-    .eq('student_id', studentId).neq('kind', 'manual').is('commitment_on', null);
+    // שיעור נוסף שחויב ביד (בלי teacher_id) אין לו שורה ביומן: נשאר כמו שהוא
+    .eq('student_id', studentId).neq('kind', 'manual').not('teacher_id', 'is', null).is('commitment_on', null);
   if (ce) fail(back, dbMessage(ce));
   const dates = (old ?? []).map((c) => c.lesson_date as string).sort();
   let rebilled = 0;
