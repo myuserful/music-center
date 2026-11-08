@@ -12,7 +12,7 @@ import { loadAll, loadBilling, loadReceipts } from '@/lib/data';
 import { autoLockOverdue } from '@/lib/dayLock';
 import { createClient } from '@/lib/supabase/server';
 import { sumitConfigured } from '@/lib/sumit';
-import { fullName, type Charge, type DayClosure, type DayLesson, type Payment } from '@/lib/types';
+import { fullName, type Charge, type DayClosure, type DayLesson, type FundCommitment, type Payment } from '@/lib/types';
 
 export default async function PaymentsPage({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
@@ -45,9 +45,10 @@ export default async function PaymentsPage({ searchParams }: { searchParams: SP 
   };
   const chargesOf = group<Charge>(billing.charges);
   const paymentsOf = group<Payment>(billing.payments);
+  const commitmentsOf = group<FundCommitment>(billing.commitments);
   const ids = new Set([...chargesOf.keys(), ...paymentsOf.keys()]);
   const accounts = [...ids].map((id) => ({
-    id, student: maps.student.get(id), a: account(chargesOf.get(id) ?? [], paymentsOf.get(id) ?? [], today),
+    id, student: maps.student.get(id), a: account(chargesOf.get(id) ?? [], paymentsOf.get(id) ?? [], today, commitmentsOf.get(id) ?? []),
   })).filter((x) => x.student);
 
   // החודש

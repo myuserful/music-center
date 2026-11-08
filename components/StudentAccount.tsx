@@ -3,7 +3,7 @@ import { DeletePaymentButton } from '@/components/DeletePaymentButton';
 import { PaymentFields } from '@/components/PaymentFields';
 import { Empty } from '@/components/ui';
 import {
-  addCharge, addLessonCharge, addManualReceipt, addPayment, deleteCharge, deleteReceipt, issueInternal, issueReceipt, markCommitment, stopAfterTrial,
+  addCharge, addFundCommitment, addLessonCharge, addManualReceipt, addPayment, deleteCharge, deleteFundCommitment, deleteReceipt, issueInternal, issueReceipt, markCommitment, stopAfterTrial,
   undoCommitment,
 } from '@/lib/actions/payments';
 import {
@@ -12,7 +12,7 @@ import {
 } from '@/lib/billing';
 import { CHARGE_KIND_LABELS, CHECK_STATUS_LABELS, PAYMENT_METHOD_LABELS, PAYMENT_TRACK_LABELS } from '@/lib/constants';
 import { dmy } from '@/lib/day';
-import { fullName, type BillingSettings, type Charge, type Payment, type Receipt, type Student, type Teacher } from '@/lib/types';
+import { fullName, type BillingSettings, type Charge, type FundCommitment, type Payment, type Receipt, type Student, type Teacher } from '@/lib/types';
 
 const STATUS_LABELS: Record<ChargeStatus, string> = {
   paid: 'שולם', partial: 'שולם חלקית', unpaid: 'לא שולם', overdue: 'באיחור', upcoming: 'עתידי', returned: 'הביאו התחייבות',
@@ -35,9 +35,11 @@ function requestParts(r: NonNullable<ReturnType<typeof monthRequest>>, balance: 
 
 /** החשבון של תלמיד/ה: יתרה, כמה לבקש החודש, תשלומים, פיקדונות וחיובים */
 export function StudentAccount({
-  student, charges, payments, receipts, settings, weekdays, pair, today, missing, sumit, hasEmail, teachers, defaultTeacherId,
+  student, charges, payments, receipts, settings, weekdays, pair, today, missing, sumit, hasEmail, teachers, defaultTeacherId, commitments = [],
 }: {
   student: Student; charges: Charge[]; payments: Payment[]; receipts: Receipt[]; settings: BillingSettings;
+  /** לאומית: ההתחייבויות שההורים הביאו (כמות) */
+  commitments?: FundCommitment[];
   /** לחיוב שיעור נוסף: המורים, וברירת המחדל - המורה הקבוע/ה של התלמיד/ה */
   teachers: Teacher[]; defaultTeacherId: number | null;
   /** יש מפתחות SUMIT: אפשר להפיק קבלות */
@@ -50,7 +52,7 @@ export function StudentAccount({
   pair?: { weekdays: number[]; done: number };
 }) {
   const here = `/students/${student.id}#account`;
-  const a = account(charges, payments, today);
+  const a = account(charges, payments, today, commitments);
   const month = today.slice(0, 7);
   // שיעורים שכבר חויבו (למשל יום שנסגר היום) לא נספרים שוב בתשלום מראש
   // (שיעור נוסף שחויב ביד - בלי מורה - לא תופס את מקומו של שיעור קבוע)
@@ -125,11 +127,12 @@ export function StudentAccount({
             <div className="stat-label">פיקדונות שמחכים להתחייבות ({shekel(a.deposits.reduce((n, c) => n + Number(c.amount), 0))})</div>
           </div>
         )}
-        {(commitmentTrack || a.commitments.length > 0) && (
+        {(commitmentTrack || a.commitments.length > 0 || a.commitmentsReceived > 0) && (
           <div className={`stat ${a.commitments.length > 0 ? 'stat-pending' : 'stat-free'}`}>
-            <div className="stat-num">{a.commitments.length}</div>
+            <div className="stat-num">{a.commitments.length > 0 ? a.commitments.length : a.commitmentsSurplus}</div>
             <div className="stat-label">
-              התחייבויות חסרות (שיעור אחד = התחייבות אחת)
+              {a.commitments.length > 0 ? 'התחייבויות חסרות (שיעור אחד = התחייבות אחת)' : 'התחייבויות בעודף לשיעורים הבאים'}
+              {` · התקבלו ${a.commitmentsReceived}`}
               {commitmentTrack && (student.commitment_notified_on ? ` · הודענו להורים ב-${dmy(student.commitment_notified_on)}` : ' · עוד לא הודענו להורים')}
             </div>
           </div>
@@ -184,27 +187,42 @@ export function StudentAccount({
         </form>
       )}
 
-      {a.commitments.length > 0 && (
-        <form action={markCommitment} className="deposit-box">
-          <input type="hidden" name="back" value={here} />
-          <h3>שיעורים שחסרה עליהם התחייבות</h3>
+      {(commitmentTrack || a.commitments.length > 0 || commitments.length > 0) && (
+        <div className="deposit-box">
+          <h3>התחייבויות</h3>
           <p className="muted">
-            בלאומית לא משלמים פיקדון: על כל שיעור שהתקיים צריך להביא התחייבות. מסמנים את השיעורים שההורים הביאו עליהם התחייבות.
+            בלאומית לא משלמים פיקדון: כל התחייבות מכסה שיעור אחד, מהשיעור הראשון והלאה. אפשר להכניס כמה ביחד,
+            והעודף מכסה אוטומטית את השיעורים הבאים.
+            {a.commitments.length > 0 ? ` חסרות ${a.commitments.length}: ${a.commitments.map((c) => dmy(c.lesson_date)).join(', ')}.`
+              : a.commitmentsSurplus > 0 ? ` יש ${a.commitmentsSurplus} בעודף לשיעורים הבאים.` : ''}
             {a.balance > 0 && ` יש להורים זכות של ${shekel(a.balance)} (פיקדון ששילמו): מחזירים בכפתור "החזר".`}
           </p>
-          <div className="checks">
-            {a.commitments.map((c) => (
-              <label key={c.id} className="check">
-                <input type="checkbox" name="id" value={c.id} defaultChecked /> {dmy(c.lesson_date)}
-              </label>
-            ))}
-          </div>
-          <div className="row-form">
-            <label>מספר התחייבות<input name="commitment_ref" dir="ltr" /></label>
-            <label>תאריך<input name="commitment_on" type="date" defaultValue={today} /></label>
-            <button className="btn btn-xs btn-primary">התקבלה התחייבות</button>
-          </div>
-        </form>
+          <form action={addFundCommitment} className="row-form">
+            <input type="hidden" name="student_id" value={student.id} />
+            <input type="hidden" name="back" value={here} />
+            <label>כמה התחייבויות<input name="count" type="number" min="1" step="1" defaultValue={Math.max(1, a.commitments.length)} required style={{ width: 70 }} /></label>
+            <label>מספר התחייבות<input name="ref" dir="ltr" /></label>
+            <label>תאריך<input name="received_on" type="date" defaultValue={today} /></label>
+            <button className="btn btn-xs btn-primary">+ התקבלו התחייבויות</button>
+          </form>
+          {commitments.length > 0 && (
+            <ul className="list">
+              {commitments.map((fc) => (
+                <li key={fc.id}>
+                  <div>
+                    <strong>{fc.count} התחייבויות</strong> · {dmy(fc.received_on)}
+                    {fc.ref && <span className="muted" dir="ltr"> · {fc.ref}</span>}
+                  </div>
+                  <form action={deleteFundCommitment}>
+                    <input type="hidden" name="id" value={fc.id} />
+                    <input type="hidden" name="back" value={here} />
+                    <ConfirmButton className="btn btn-xs btn-ghost" message={`למחוק את ${fc.count} ההתחייבויות מ-${dmy(fc.received_on)}?`}>✕</ConfirmButton>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
 
       {a.deposits.length > 0 && (

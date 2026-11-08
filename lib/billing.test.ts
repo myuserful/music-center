@@ -376,3 +376,28 @@ describe('לאומית: התחייבות על כל שיעור בלי פיקדו�
     expect(d.insert.map((c) => [c.kind, c.lesson_date])).toEqual([['commitment', '2026-10-27']]);
   });
 });
+
+describe('לאומית: התחייבויות לפי כמות', () => {
+  const fc = (count: number) => ({ id: nextId++, student_id: 1, received_on: '2026-11-01', ref: '', count, notes: '' });
+  const lesson = (date: string) => charge({ kind: 'commitment', track: 'fund_commitment', amount: 0, lesson_date: date, due_date: date });
+
+  it('6 התחייבויות על 3 שיעורים: כולם מכוסים, ו-3 בעודף', () => {
+    const a = account([lesson('2026-10-20'), lesson('2026-10-27'), lesson('2026-11-03')], [], '2026-11-05', [fc(6)]);
+    expect(a.commitments).toHaveLength(0);
+    expect(a.commitmentsReceived).toBe(6);
+    expect(a.commitmentsSurplus).toBe(3);
+    expect(a.lines.every((l) => l.status === 'returned')).toBe(true);
+  });
+
+  it('פחות התחייבויות משיעורים: מכסות מהשיעור הראשון, השאר חסרים', () => {
+    const a = account([lesson('2026-11-03'), lesson('2026-10-20'), lesson('2026-10-27')], [], '2026-11-05', [fc(1), fc(1)]);
+    expect(a.commitments.map((c) => c.lesson_date)).toEqual(['2026-11-03']);
+    expect(a.commitmentsSurplus).toBe(0);
+  });
+
+  it('שיעור חדש אחרי שיש עודף מכוסה אוטומטית', () => {
+    const a = account([lesson('2026-10-20'), lesson('2026-11-10')], [], '2026-11-10', [fc(2)]);
+    expect(a.commitments).toHaveLength(0);
+    expect(a.commitmentsSurplus).toBe(0);
+  });
+});

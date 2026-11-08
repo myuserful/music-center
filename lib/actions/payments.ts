@@ -177,6 +177,29 @@ export async function undoCommitment(fd: FormData) {
   done(back, 'ההתחייבות בוטלה');
 }
 
+/** לאומית: ההורים הביאו התחייבויות (כמות). הן מכסות את השיעורים מהראשון והלאה, והעודף נשמר לשיעורים הבאים */
+export async function addFundCommitment(fd: FormData) {
+  const db = await createClient();
+  const studentId = num(fd, 'student_id')!;
+  const back = backTo(fd, `/students/${studentId}#account`);
+  const count = num(fd, 'count');
+  if (!count || count < 1 || !Number.isInteger(count)) fail(back, 'יש למלא כמה התחייבויות התקבלו');
+  const { error } = await db.from('fund_commitments').insert({
+    student_id: studentId, count, ref: str(fd, 'ref'),
+    received_on: validDate(str(fd, 'received_on')) ? str(fd, 'received_on') : today(),
+  });
+  if (error) fail(back, error.code === '42P01' || error.code === 'PGRST205' ? 'צריך להריץ את 0062_fund_commitments.sql ב-Supabase' : dbMessage(error));
+  done(back, `נרשמו ${count} התחייבויות`);
+}
+
+export async function deleteFundCommitment(fd: FormData) {
+  const db = await createClient();
+  const back = backTo(fd, HOME);
+  const { error } = await db.from('fund_commitments').delete().eq('id', num(fd, 'id')!);
+  if (error) fail(back, dbMessage(error));
+  done(back, 'ההתחייבויות נמחקו');
+}
+
 /** לאומית: סימון שהתקשרנו להורים והודענו על המעבר להתחייבויות (on=0 מבטל) */
 export async function setCommitmentNotified(fd: FormData) {
   const db = await createClient();

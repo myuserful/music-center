@@ -1,6 +1,6 @@
 import { BILLABLE, type ChargeKind, type PaymentTrack } from './constants';
 import { weekdayOf } from './day';
-import type { BillingSettings, Charge, DayLesson, Payment } from './types';
+import type { BillingSettings, Charge, DayLesson, FundCommitment, Payment } from './types';
 
 export type NewCharge = Omit<Charge, 'id' | 'commitment_on' | 'commitment_ref'>;
 
@@ -206,13 +206,18 @@ const isMaccabiLater = (c: Charge) => c.kind === 'maccabi_later';
  * balance - השיעורים הרגילים: חיובי = זכות, שלילי = חוב (רק מה שכבר הגיע זמנו).
  * זיכוי מכבי - upcoming (עוד לא הגיע זמנו), overdue (עבר הזמן ולא שולם), maccabiCredit (שולם מראש לזיכוי ועוד לא נוצל)
  */
-export function account(charges: Charge[], payments: Payment[], today: string) {
+export function account(charges: Charge[], payments: Payment[], today: string, commitments: FundCommitment[] = []) {
   const pools = credits(charges, payments);
+  // לאומית: ההתחייבויות שהתקבלו מכסות את השיעורים מהראשון והלאה (שיעור שסומן עליו ביד לפני 0062 - כבר מכוסה)
+  const received = commitments.reduce((n, c) => n + Number(c.count), 0);
+  const waiting = charges.filter((c) => c.kind === 'commitment' && !c.commitment_on)
+    .sort((x, y) => x.lesson_date.localeCompare(y.lesson_date) || x.id - y.id);
+  const coveredByCommitment = new Set(waiting.slice(0, received).map((c) => c.id));
   const sorted = [...charges].sort((a, b) => a.due_date.localeCompare(b.due_date) || a.id - b.id);
   const lines: ChargeLine[] = sorted.map((c) => {
     const amount = effectiveAmount(c);
     if ((c.kind === 'deposit' || c.kind === 'commitment') && c.commitment_on) return { charge: c, covered: 0, status: 'returned', paidBy: [] };
-    if (c.kind === 'commitment') return { charge: c, covered: 0, status: 'no_commitment', paidBy: [] };
+    if (c.kind === 'commitment') return { charge: c, covered: 0, status: coveredByCommitment.has(c.id) ? 'returned' : 'no_commitment', paidBy: [] };
     if (amount <= 0) return { charge: c, covered: amount, status: 'paid', paidBy: [] };
     const paidBy: ChargeLine['paidBy'] = [];
     let covered = 0;
@@ -249,7 +254,11 @@ export function account(charges: Charge[], payments: Payment[], today: string) {
     /** פיקדונות שעוד לא הביאו עליהם התחייבות */
     deposits: charges.filter((c) => c.kind === 'deposit' && !c.commitment_on),
     /** שיעורים בלאומית שעוד לא הביאו עליהם התחייבות */
-    commitments: charges.filter((c) => c.kind === 'commitment' && !c.commitment_on).sort((x, y) => x.lesson_date.localeCompare(y.lesson_date)),
+    commitments: waiting.slice(received),
+    /** התחייבויות שהתקבלו */
+    commitmentsReceived: received + charges.filter((c) => c.kind === 'commitment' && c.commitment_on).length,
+    /** התחייבויות בעודף: יכסו את השיעורים הבאים */
+    commitmentsSurplus: Math.max(0, received - waiting.length),
   };
 }
 

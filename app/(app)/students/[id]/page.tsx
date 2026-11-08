@@ -246,6 +246,7 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
 
           <StudentAccount
             student={s} charges={billing!.charges} payments={billing!.payments} settings={billing!.settings}
+            commitments={billing!.commitments}
             receipts={receipts!.receipts}
             teachers={all.teachers.filter((t) => t.active || lessons.some((l) => l.teacher_id === t.id))}
             defaultTeacherId={(lessons.find((l) => l.status === 'confirmed') ?? lessons[0])?.teacher_id ?? null}

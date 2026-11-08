@@ -5,7 +5,7 @@ import { toMin } from './time';
 import type { DB } from './supabase/server';
 import { isTimed } from './types';
 import type {
-  BillingSettings, Branch, Charge, Choir, Contact, DayClosure, DayLesson, DayLock, Enrollment, Instrument, Receipt, ReceiptCertificate, TeacherExtra, TeacherPayroll, Lesson, Payment, Room, Student,
+  BillingSettings, Branch, Charge, Choir, Contact, DayClosure, DayLesson, DayLock, Enrollment, FundCommitment, Instrument, Receipt, ReceiptCertificate, TeacherExtra, TeacherPayroll, Lesson, Payment, Room, Student,
   Teacher, TeacherHours,
 } from './types';
 
@@ -147,8 +147,16 @@ export async function loadAll(db: DB) {
 
 export type All = Awaited<ReturnType<typeof loadAll>>;
 
-/** נתוני תשלומים. studentId מצמצם לתלמיד אחד */
+/** נתוני תשלומים, ועוד ההתחייבויות שהתקבלו בלאומית. studentId מצמצם לתלמיד אחד */
 export async function loadBilling(db: DB, studentId?: number) {
+  const q = db.from('fund_commitments').select('*').order('received_on').order('id');
+  const [base, fc] = await Promise.all([loadBillingCore(db, studentId), studentId ? q.eq('student_id', studentId) : q]);
+  // לפני 0062 אין טבלה: אין התחייבויות לפי כמות
+  if (fc.error && !['42P01', 'PGRST205'].includes(fc.error.code)) throw new Error(fc.error.message);
+  return { ...base, commitments: (fc.data ?? []) as FundCommitment[], commitmentsMissing: !!fc.error };
+}
+
+async function loadBillingCore(db: DB, studentId?: number) {
   if (tryRpc(noRpc.billing)) {
     const rpc = await db.rpc('billing_data', { p_student: studentId ?? null });
     const d = rpc.data as { settings: BillingSettings; charges: Charge[]; payments: Payment[]; rates?: unknown } | null;
