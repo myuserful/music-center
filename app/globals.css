@@ -937,3 +937,5 @@ a.link-chip:hover { text-decoration: underline; }
 /* שיעור בזוג: שני כרטיסים באותה משבצת - קטנים, רק השם (השעה והכלי זהים) */
 .mini-board td.pair-cell .slot { height: auto; padding: 1px 6px; margin-bottom: 1px; }
 .mini-board td.pair-cell .slot small { display: none; }
+.perm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px 16px; }
+.perm-grid-wide { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }

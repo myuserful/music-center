@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { Empty, Flash, PageHead, type SP } from '@/components/ui';
 import { addUser, removeUserAccess, sendSiteLink, setUserRole } from '@/lib/actions/users';
@@ -24,7 +25,7 @@ export default async function UsersPage({ searchParams }: { searchParams: SP }) 
   if (!admin) {
     return (
       <>
-        <PageHead title="משתמשים והרשאות" />
+        <PageHead title="משתמשים" />
         <section className="card">
           <p>כדי לנהל משתמשים צריך להגדיר בשרת את <code>SUPABASE_SECRET_KEY</code>.</p>
           <p className="muted">ב-Vercel: Settings › Environment Variables. המפתח נמצא ב-Supabase: Project Settings › API Keys › Secret keys.</p>
@@ -44,7 +45,7 @@ export default async function UsersPage({ searchParams }: { searchParams: SP }) 
 
   return (
     <>
-      <PageHead title="משתמשים והרשאות" sub="מי יכול להיכנס למערכת ומה כל אחד רואה" />
+      <PageHead title="משתמשים" sub="מי יכול להיכנס למערכת ובאיזה תפקיד" />
       <Flash sp={sp} />
       {(error || re) && (
         <div className="flash flash-error" role="alert">
@@ -127,13 +128,9 @@ export default async function UsersPage({ searchParams }: { searchParams: SP }) 
         )}
       </section>
 
-      <section className="card">
-        <h2>מה כל תפקיד רואה</h2>
-        <ul className="list">
-          <li><strong>{ROLE_LABELS.admin}:</strong> הכול, כולל שכר מורים, הכנסות והוצאות, מחירון, מחיקת תשלומים וקבלות, וניהול משתמשים.</li>
-          <li><strong>{ROLE_LABELS.secretary}:</strong> כל השאר. רושמת תשלומים ומפיקה קבלות, בלי למחוק.</li>
-        </ul>
-      </section>
+      <p className="muted">
+        מנהל רואה הכול. מה מזכירה רואה ועושה נקבע במסך <Link href="/permissions">הרשאות</Link>.
+      </p>
     </>
   );
 }

@@ -1,10 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { getRole } from '@/lib/roles';
+import { can } from '@/lib/roles';
 import { createClient } from '@/lib/supabase/server';
 
 /** פתיחת הקבלה (או האסמכתא, עם file=proof): קישור זמני (5 דקות) לקובץ בתיקייה הפרטית */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if ((await getRole()) !== 'admin') return new Response('אין הרשאה', { status: 403 });
+  if (!(await can('finance'))) return new Response('אין הרשאה', { status: 403 });
   const { id } = await params;
   const proof = req.nextUrl.searchParams.get('file') === 'proof';
   const db = await createClient();

@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { STATUSES, type Status } from '../constants';
-import { getRole } from '../roles';
+import { can, getRole } from '../roles';
 
 export const str = (fd: FormData, k: string) => String(fd.get(k) ?? '').trim();
 
@@ -47,4 +47,9 @@ export function dbMessage(e: { code?: string; message: string }): string {
 /** פעולה של מנהל בלבד: אחרת חוזרים עם הודעה (בלי לגעת בנתונים) */
 export async function adminOnly(back: string): Promise<void> {
   if ((await getRole()) !== 'admin') fail(back, 'רק מנהל יכול לבצע את הפעולה הזו');
+}
+
+/** פעולה שדורשת הרשאה (מנהל תמיד מורשה): אחרת חוזרים עם הודעה */
+export async function requirePerm(perm: string, back: string): Promise<void> {
+  if (!(await can(perm))) fail(back, 'אין לך הרשאה לפעולה הזו');
 }

@@ -9,7 +9,7 @@ import { issueInternalReceipt, issueSumitReceipts } from '../receipts';
 import { sumitNextReceiptNumber } from '../sumit';
 import { createClient } from '../supabase/server';
 import { fullName, type BillingSettings, type Charge } from '../types';
-import { adminOnly, backTo, dbMessage, done, fail, num, oneOf, str } from './util';
+import { requirePerm, backTo, dbMessage, done, fail, num, oneOf, str } from './util';
 
 const HOME = '/payments';
 const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
@@ -17,7 +17,7 @@ const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jer
 // ---- מחירון ----
 
 export async function saveBillingSettings(fd: FormData) {
-  await adminOnly(backTo(fd, HOME));
+  await requirePerm('edit_prices', backTo(fd, HOME));
   const db = await createClient();
   const row = {
     price_private: num(fd, 'price_private'),
@@ -271,7 +271,7 @@ export async function addPayment(fd: FormData) {
 }
 
 export async function deletePayment(fd: FormData) {
-  await adminOnly(backTo(fd, HOME));
+  await requirePerm('delete_payments', backTo(fd, HOME));
   const db = await createClient();
   const back = backTo(fd, HOME);
   // קבלות ב-SUMIT נמחקות מהמערכת יחד עם התשלום, אבל לא מתבטלות ב-SUMIT - מזכירים לבטל שם
@@ -342,7 +342,7 @@ export async function addManualReceipt(fd: FormData) {
 
 /** מחיקת מספר קבלה שהוקלד ביד או אישור פנימי (קבלה מ-SUMIT מבטלים ב-SUMIT) */
 export async function deleteReceipt(fd: FormData) {
-  await adminOnly(backTo(fd, HOME));
+  await requirePerm('delete_payments', backTo(fd, HOME));
   const db = await createClient();
   const back = backTo(fd, HOME);
   const { error } = await db.from('receipts').delete().eq('id', num(fd, 'id')!).is('sumit_document_id', null);

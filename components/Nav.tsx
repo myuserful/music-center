@@ -2,35 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ADMIN_PATHS } from '@/lib/auth';
+import { ADMIN_SCREENS, SCREENS } from '@/lib/permissions';
 
-const LINKS = [
-  { href: '/', label: 'מסך ראשי', icon: '◉' },
-  { href: '/assign', label: 'שיבוץ בגרירה', icon: '⇄' },
-  { href: '/tasks', label: 'משימות', icon: '☑' },
-  { href: '/calls', label: 'טלפונים להורים', icon: '☎' },
-  { href: '/schedule', label: 'לוח שיעורים', icon: '▦' },
-  { href: '/daily', label: 'סגירת יום', icon: '✎' },
-  { href: '/tracking', label: 'מעקב שיבוץ', icon: '✓' },
-  { href: '/students', label: 'תלמידים', icon: '☺' },
-  { href: '/siblings', label: 'אחים', icon: '⚭' },
-  { href: '/funds', label: 'קופות חולים', icon: '✚' },
-  { href: '/payments', label: 'תשלומים', icon: '₪' },
-  { href: '/certificates', label: 'אישורי קבלה', icon: '❏' },
-  { href: '/payroll', label: 'שכר מורים', icon: '◷' },
-  { href: '/finance', label: 'הכנסות והוצאות', icon: '⚖' },
-  { href: '/teachers', label: 'מורים', icon: '♪' },
-  { href: '/choirs', label: 'מקהלות', icon: '♫' },
-  { href: '/branches', label: 'סניפים וחדרים', icon: '⌂' },
-  { href: '/instruments', label: 'כלי נגינה', icon: '♬' },
-  { href: '/users', label: 'משתמשים והרשאות', icon: '⚿' },
-];
-
-export function Nav({ admin }: { admin: boolean }) {
+export function Nav({ allowed, admin }: { allowed: string[]; admin: boolean }) {
   const path = usePathname();
+  const links = [...SCREENS.filter((s) => allowed.includes(s.perm)), ...(admin ? ADMIN_SCREENS : [])];
   return (
     <nav className="nav">
-      {LINKS.filter((l) => admin || !ADMIN_PATHS.includes(l.href)).map((l) => {
+      {links.map((l) => {
         const active = l.href === '/' ? path === '/' : path.startsWith(l.href);
         return (
           <Link key={l.href} href={l.href} className={active ? 'active' : ''}>

@@ -9,7 +9,7 @@ import { PaymentTrackField } from '@/components/PaymentTrackField';
 import { StudentHistory } from '@/components/LessonHistory';
 import { ReceiptButton } from '@/components/ReceiptButton';
 import { StudentAccount } from '@/components/StudentAccount';
-import { getRole } from '@/lib/roles';
+import { can } from '@/lib/roles';
 import { StudentStatusFields } from '@/components/StudentStatusFields';
 import { BackLink, Empty, Flash, one, PageHead, StatusActions, StatusBadge, type SP } from '@/components/ui';
 import { isoDate } from '@/lib/age';
@@ -248,7 +248,7 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
           <StudentAccount
             student={s} charges={billing!.charges} payments={billing!.payments} settings={billing!.settings}
             commitments={billing!.commitments}
-            admin={(await getRole()) === 'admin'}
+            canDelete={await can('delete_payments')}
             receipts={receipts!.receipts}
             teachers={all.teachers.filter((t) => t.active || lessons.some((l) => l.teacher_id === t.id))}
             defaultTeacherId={(lessons.find((l) => l.status === 'confirmed') ?? lessons[0])?.teacher_id ?? null}

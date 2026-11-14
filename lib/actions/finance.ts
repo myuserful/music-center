@@ -4,14 +4,14 @@ import { TX_METHODS, type TxKind } from '../constants';
 import { RECEIPT_BUCKET as BUCKET, receiptFile, uploadReceipt } from '../receiptFile';
 import { isMissing, occurrenceDate, RECURRING_MISSING } from '../recurring';
 import { createClient } from '../supabase/server';
-import { adminOnly, backTo, dbMessage, done, fail, num, oneOf, str } from './util';
+import { requirePerm, backTo, dbMessage, done, fail, num, oneOf, str } from './util';
 
 const HOME = '/finance';
 const monthOf = (date: string) => `${HOME}?month=${date.slice(0, 7)}`;
 
 /** הכנסה / הוצאה חדשה, או עדכון (כשיש id). משמש גם לרישום שכר מורה מהטבלה */
 export async function saveTransaction(fd: FormData) {
-  await adminOnly(HOME);
+  await requirePerm('finance', HOME);
   const db = await createClient();
   const id = num(fd, 'id');
   const here = backTo(fd, id ? `${HOME}/${id}` : HOME);
@@ -60,7 +60,7 @@ export async function saveTransaction(fd: FormData) {
 }
 
 export async function deleteTransaction(fd: FormData) {
-  await adminOnly(HOME);
+  await requirePerm('finance', HOME);
   const db = await createClient();
   const back = backTo(fd, HOME);
   const id = num(fd, 'id')!;
@@ -77,7 +77,7 @@ const monthInput = (v: string) => (/^\d{4}-\d{2}$/.test(v) ? `${v}-01` : null);
 
 /** הוצאה קבועה חדשה, או עדכון (כשיש id). עדכון חל גם על הרישום של החודש הנוכחי, אם כבר נוצר. חודשים קודמים לא משתנים */
 export async function saveRecurring(fd: FormData) {
-  await adminOnly(HOME);
+  await requirePerm('finance', HOME);
   const db = await createClient();
   const id = num(fd, 'id');
   const row = {
@@ -115,7 +115,7 @@ export async function saveRecurring(fd: FormData) {
 
 /** מחיקת הוצאה קבועה: לא תירשם יותר. מה שכבר נרשם בחודשים קודמים נשאר */
 export async function deleteRecurring(fd: FormData) {
-  await adminOnly(HOME);
+  await requirePerm('finance', HOME);
   const db = await createClient();
   const { error } = await db.from('recurring_expenses').delete().eq('id', num(fd, 'id')!);
   if (error) fail(RECURRING, dbMessage(error));
@@ -124,7 +124,7 @@ export async function deleteRecurring(fd: FormData) {
 
 /** מעתיק לחודש הנוכחי את הרישומים הקבועים מהחודש הקודם (שכירות, ביטוח...). מה שכבר הועתק לא מוכפל */
 export async function copyRecurring(fd: FormData) {
-  await adminOnly(HOME);
+  await requirePerm('finance', HOME);
   const db = await createClient();
   const month = str(fd, 'month'); // YYYY-MM-01
   const back = monthOf(month);

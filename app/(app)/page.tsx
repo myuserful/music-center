@@ -7,6 +7,9 @@ import {
 } from '@/lib/constants';
 import { loadAll } from '@/lib/data';
 import { autoLockOverdue } from '@/lib/dayLock';
+import { redirect } from 'next/navigation';
+import { SCREENS } from '@/lib/permissions';
+import { getPermissions } from '@/lib/roles';
 import { createClient } from '@/lib/supabase/server';
 import { toMin } from '@/lib/time';
 import { fullName, requestedInstrumentIds, type Student } from '@/lib/types';
@@ -38,6 +41,13 @@ function Bars({ rows, total }: { rows: Bar[]; total?: number }) {
 const hours = (minutes: number) => (minutes / 60).toLocaleString('he-IL', { maximumFractionDigits: 1 });
 
 export default async function Dashboard({ searchParams }: { searchParams: SP }) {
+  const perms = await getPermissions();
+  if (!perms.has('home')) {
+    // בלי הרשאה למסך הראשי: עוברים למסך הראשון שמותר
+    const first = SCREENS.find((s) => s.perm !== 'home' && perms.has(s.perm));
+    if (first) redirect(first.href);
+    return <><PageHead title="אין מסכים" /><Empty>לתפקיד שלך עוד לא הוגדרו מסכים. צריך לבקש מהמנהל.</Empty></>;
+  }
   const sp = await searchParams;
   const db = await createClient();
   // ימים שלא נסגרו ביד נסגרים 24 שעות אחרי שנגמרו (לפני שמחשבים)

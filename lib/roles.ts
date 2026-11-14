@@ -1,5 +1,6 @@
 import { cache } from 'react';
 import { LOCAL_NO_AUTH } from './auth';
+import { ALL_PERMS, DEFAULT_SECRETARY } from './permissions';
 import { createClient } from './supabase/server';
 
 export type Role = 'admin' | 'secretary' | 'teacher' | 'parent';
@@ -42,3 +43,19 @@ export async function requireRole(...allowed: Role[]): Promise<Role> {
   if (!role || !allowed.includes(role)) throw new ForbiddenError();
   return role;
 }
+
+/**
+ * ההרשאות של המשתמש המחובר (פעם אחת לכל בקשה). מנהל: הכול.
+ * עד שמריצים את 0064_role_permissions.sql, מזכירה מקבלת את ברירת המחדל.
+ */
+export const getPermissions = cache(async (): Promise<Set<string>> => {
+  const role = await getRole();
+  if (role === 'admin') return new Set(ALL_PERMS);
+  if (role !== 'secretary') return new Set();
+  const db = await createClient();
+  const { data, error } = await db.from('role_permissions').select('perm').eq('role', role);
+  if (error && (error.code === '42P01' || error.code === 'PGRST205')) return new Set(DEFAULT_SECRETARY);
+  return new Set((data ?? []).map((r) => r.perm as string));
+});
+
+export const can = async (perm: string) => (await getPermissions()).has(perm);

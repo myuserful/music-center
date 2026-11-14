@@ -1,8 +1,3 @@
-import { redirect } from 'next/navigation';
-import { getRole } from '@/lib/roles';
+import { screenGuard } from '@/lib/screenGuard';
 
-/** מסך של מנהל בלבד */
-export default async function AdminOnlyLayout({ children }: { children: React.ReactNode }) {
-  if ((await getRole()) !== 'admin') redirect('/');
-  return children;
-}
+export default screenGuard('finance');

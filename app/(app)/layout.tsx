@@ -1,7 +1,7 @@
 import { Nav } from '@/components/Nav';
 import { logout } from '@/lib/actions/settings';
 import { LOCAL_NO_AUTH } from '@/lib/auth';
-import { getRole, isStaff, ROLE_LABELS } from '@/lib/roles';
+import { getPermissions, getRole, isStaff, ROLE_LABELS } from '@/lib/roles';
 import { createClient } from '@/lib/supabase/server';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -32,7 +32,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <img src="/logo.png" alt="מקצב · קצב אחד קדימה" width={339} height={223} />
         </div>
         <div className="eq-strip" aria-hidden />
-        <Nav admin={role === 'admin'} />
+        <Nav allowed={[...(await getPermissions())]} admin={role === 'admin'} />
         {LOCAL_NO_AUTH ? (
           <div className="user-box"><span>מצב מקומי, בלי התחברות</span></div>
         ) : (
