@@ -1,6 +1,7 @@
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { Empty, Flash, PageHead, type SP } from '@/components/ui';
-import { addUser, removeUserAccess, setUserRole } from '@/lib/actions/users';
+import { addUser, removeUserAccess, sendSiteLink, setUserRole } from '@/lib/actions/users';
+import { mailConfigured } from '@/lib/mail';
 import { LOCAL_NO_AUTH } from '@/lib/auth';
 import { ROLE_LABELS, type Role } from '@/lib/roles';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -12,6 +13,7 @@ const dmy = (iso?: string | null) =>
 export default async function UsersPage({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
   const admin = createAdminClient();
+  const mailOk = mailConfigured();
 
   let me = '';
   if (!LOCAL_NO_AUTH) {
@@ -63,9 +65,18 @@ export default async function UsersPage({ searchParams }: { searchParams: SP }) 
               <option value="admin">{ROLE_LABELS.admin}</option>
             </select>
           </label>
+          {mailOk && (
+            <label className="check">
+              <input type="checkbox" name="send_link" defaultChecked />
+              לשלוח מייל עם קישור לאתר
+            </label>
+          )}
           <button className="btn btn-primary">הוספה</button>
         </form>
-        <p className="muted">לא נשלח מייל. המשתמש נכנס במסך הכניסה הרגיל עם המייל הזה, ומקבל שם קישור כניסה.</p>
+        <p className="muted">
+          המשתמש נכנס במסך הכניסה הרגיל עם המייל הזה, ומקבל שם קישור כניסה.
+          {!mailOk && ' (שליחת מיילים לא מוגדרת, אז צריך לשלוח לו את כתובת האתר בעצמך.)'}
+        </p>
       </section>
 
       <section className="card table-wrap">
@@ -95,7 +106,13 @@ export default async function UsersPage({ searchParams }: { searchParams: SP }) 
                     )}
                   </td>
                   <td className="nowrap">{dmy(u.lastSignIn)}</td>
-                  <td>
+                  <td className="status-actions">
+                    {u.role && mailOk && (
+                      <form action={sendSiteLink}>
+                        <input type="hidden" name="user_id" value={u.id} />
+                        <ConfirmButton className="btn btn-xs" message={`לשלוח ל-${u.email} מייל עם קישור לאתר?`}>שליחת קישור</ConfirmButton>
+                      </form>
+                    )}
                     {u.role && u.id !== me && (
                       <form action={removeUserAccess}>
                         <input type="hidden" name="user_id" value={u.id} />
