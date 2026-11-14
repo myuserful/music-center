@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Empty, Flash, PageHead, one, type SP } from '@/components/ui';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { DeletePaymentButton } from '@/components/DeletePaymentButton';
+import { getRole } from '@/lib/roles';
 import {
   addPayment, issueInternal, issueReceipt, rebillMonth, saveBillingSettings, setCheckStatus, setCommitmentNotified, testSumit,
 } from '@/lib/actions/payments';
@@ -17,6 +18,7 @@ import { fullName, type Charge, type DayClosure, type DayLesson, type FundCommit
 export default async function PaymentsPage({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
   const db = await createClient();
+  const admin = (await getRole()) === 'admin';
   // ימים שלא נסגרו ביד נסגרים 24 שעות אחרי שנגמרו (לפני שמחשבים)
   await autoLockOverdue(db);
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
@@ -348,7 +350,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: SP 
                     </td>
                     <td>{PAYMENT_METHOD_LABELS[p.method]}{p.reference && <div className="muted">{p.reference}</div>}</td>
                     <td>{rs.map((r) => (r.source === 'internal' ? `אישור ${r.number}` : `קבלה ${r.number}`)).join(', ') || <span className="muted">—</span>}</td>
-                    <td><DeletePaymentButton payment={p} receipts={rs} back={back} /></td>
+                    <td>{admin && <DeletePaymentButton payment={p} receipts={rs} back={back} />}</td>
                   </tr>
                 );
               })}
@@ -403,7 +405,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: SP 
         )}
       </section>
 
-      <section className="card">
+      {admin && <section className="card">
         <h2>מחירון לשיעור</h2>
         <form action={saveBillingSettings}>
           <div className="form-grid">
@@ -418,7 +420,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: SP 
           <p className="muted">שינוי מחיר חל על שיעורים שייסגרו מעכשיו. שיעורים שכבר חויבו נשארים במחיר שלהם.</p>
           <div className="form-foot"><button className="btn btn-primary">שמירת מחירון</button></div>
         </form>
-      </section>
+      </section>}
     </>
   );
 }

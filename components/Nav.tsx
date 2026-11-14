@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { ADMIN_PATHS } from '@/lib/auth';
 
 const LINKS = [
   { href: '/', label: 'מסך ראשי', icon: '◉' },
@@ -22,13 +23,14 @@ const LINKS = [
   { href: '/choirs', label: 'מקהלות', icon: '♫' },
   { href: '/branches', label: 'סניפים וחדרים', icon: '⌂' },
   { href: '/instruments', label: 'כלי נגינה', icon: '♬' },
+  { href: '/users', label: 'משתמשים והרשאות', icon: '⚿' },
 ];
 
-export function Nav() {
+export function Nav({ admin }: { admin: boolean }) {
   const path = usePathname();
   return (
     <nav className="nav">
-      {LINKS.map((l) => {
+      {LINKS.filter((l) => admin || !ADMIN_PATHS.includes(l.href)).map((l) => {
         const active = l.href === '/' ? path === '/' : path.startsWith(l.href);
         return (
           <Link key={l.href} href={l.href} className={active ? 'active' : ''}>

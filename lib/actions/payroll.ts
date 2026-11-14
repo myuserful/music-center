@@ -6,7 +6,7 @@ import { validDate } from '../day';
 import { RECEIPT_BUCKET, receiptFile, uploadReceipt } from '../receiptFile';
 import { createClient } from '../supabase/server';
 import { fullName } from '../types';
-import { backTo, dbMessage, done, fail, num, oneOf, str } from './util';
+import { adminOnly, backTo, dbMessage, done, fail, num, oneOf, str } from './util';
 
 const HOME = '/payroll';
 const MISSING = 'צריך להריץ את 0046_teacher_pay.sql ב-Supabase';
@@ -14,6 +14,7 @@ const missing = (code?: string) => code === '42P01' || code === 'PGRST205' || co
 
 /** תוספת לשכר: זמן (דקות) או סכום (בונוס), עם סיבה */
 export async function addTeacherExtra(fd: FormData) {
+  await adminOnly(HOME);
   const db = await createClient();
   const back = backTo(fd, HOME);
   const teacherId = num(fd, 'teacher_id');
@@ -32,6 +33,7 @@ export async function addTeacherExtra(fd: FormData) {
 }
 
 export async function deleteTeacherExtra(fd: FormData) {
+  await adminOnly(HOME);
   const db = await createClient();
   const back = backTo(fd, HOME);
   const { error } = await db.from('teacher_extras').delete().eq('id', num(fd, 'id')!);
@@ -67,6 +69,7 @@ const MISSING_PROOF = 'צריך להריץ את 0060_transaction_proof.sql ב-Su
 
 /** אישור ותשלום שכר החודש: נרשם כהוצאה (שכר מורים) ב"הכנסות והוצאות", והחודש מסומן כשולם. קבלה ואסמכתא מצרפים כאן או אחרי התשלום. בלי קבלה: "חסרה קבלה" */
 export async function approvePayroll(fd: FormData) {
+  await adminOnly(HOME);
   const db = await createClient();
   const back = backTo(fd, HOME);
   const teacherId = num(fd, 'teacher_id');
@@ -109,6 +112,7 @@ export async function approvePayroll(fd: FormData) {
 
 /** צירוף או החלפה של קבלה ואסמכתא לשכר ששולם. הן מקושרות להוצאה ב"הכנסות והוצאות" */
 export async function attachPayrollProof(fd: FormData) {
+  await adminOnly(HOME);
   const db = await createClient();
   const back = backTo(fd, HOME);
   const reference = str(fd, 'reference');
@@ -132,6 +136,7 @@ export async function attachPayrollProof(fd: FormData) {
 
 /** ביטול אישור השכר (גם ההוצאה ב"הכנסות והוצאות", הקבלה והאסמכתא נמחקות) */
 export async function cancelPayroll(fd: FormData) {
+  await adminOnly(HOME);
   const db = await createClient();
   const back = backTo(fd, HOME);
   const teacherId = num(fd, 'teacher_id');

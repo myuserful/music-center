@@ -35,11 +35,13 @@ function requestParts(r: NonNullable<ReturnType<typeof monthRequest>>, balance: 
 
 /** החשבון של תלמיד/ה: יתרה, כמה לבקש החודש, תשלומים, פיקדונות וחיובים */
 export function StudentAccount({
-  student, charges, payments, receipts, settings, weekdays, pair, today, missing, sumit, hasEmail, teachers, defaultTeacherId, commitments = [],
+  student, charges, payments, receipts, settings, weekdays, pair, today, missing, sumit, hasEmail, teachers, defaultTeacherId, commitments = [], admin = true,
 }: {
   student: Student; charges: Charge[]; payments: Payment[]; receipts: Receipt[]; settings: BillingSettings;
   /** לאומית: ההתחייבויות שההורים הביאו (כמות) */
   commitments?: FundCommitment[];
+  /** מנהל: יכול למחוק תשלומים וקבלות */
+  admin?: boolean;
   /** לחיוב שיעור נוסף: המורים, וברירת המחדל - המורה הקבוע/ה של התלמיד/ה */
   teachers: Teacher[]; defaultTeacherId: number | null;
   /** יש מפתחות SUMIT: אפשר להפיק קבלות */
@@ -345,8 +347,8 @@ export function StudentAccount({
                     </div>
                   </div>
                   {p.check_status && <span className="chip chip-plain">{CHECK_STATUS_LABELS[p.check_status]}</span>}
-                  {!p.refund && <ReceiptCell payment={p} receipts={receiptsOf(p.id)} sumit={sumit} hasEmail={hasEmail} back={here} />}
-                  <DeletePaymentButton payment={p} receipts={receiptsOf(p.id)} back={here} />
+                  {!p.refund && <ReceiptCell payment={p} receipts={receiptsOf(p.id)} sumit={sumit} hasEmail={hasEmail} back={here} admin={admin} />}
+                  {admin && <DeletePaymentButton payment={p} receipts={receiptsOf(p.id)} back={here} />}
                 </li>
               ))}
             </ul>
@@ -398,8 +400,8 @@ function deleteChargeMessage(c: Charge, paidBy: { paymentId: number | null; amou
 }
 
 /** הקבלות של תשלום, או הפקה ב-SUMIT / הקלדת מספר ביד */
-function ReceiptCell({ payment: p, receipts, sumit, hasEmail, back }: {
-  payment: Payment; receipts: Receipt[]; sumit: boolean; hasEmail: boolean; back: string;
+function ReceiptCell({ payment: p, receipts, sumit, hasEmail, back, admin }: {
+  payment: Payment; receipts: Receipt[]; sumit: boolean; hasEmail: boolean; back: string; admin: boolean;
 }) {
   if (receipts.length) {
     return (
@@ -407,7 +409,7 @@ function ReceiptCell({ payment: p, receipts, sumit, hasEmail, back }: {
         {receipts.map((r) => (
           <span key={r.id}>
             <ReceiptChip r={r} />
-            {!r.sumit_document_id && (
+            {admin && !r.sumit_document_id && (
               <form action={deleteReceipt} style={{ display: 'inline' }}>
                 <input type="hidden" name="id" value={r.id} />
                 <input type="hidden" name="back" value={back} />

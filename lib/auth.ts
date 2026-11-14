@@ -5,3 +5,6 @@
  */
 export const LOCAL_NO_AUTH =
   process.env.NODE_ENV === 'development' && process.env.AUTH_DISABLED === 'true';
+
+/** מסכים שרק מנהל רואה (גם בתפריט וגם בגישה ישירה) */
+export const ADMIN_PATHS = ['/payroll', '/finance', '/users'];

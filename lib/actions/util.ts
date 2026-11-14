@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { STATUSES, type Status } from '../constants';
+import { getRole } from '../roles';
 
 export const str = (fd: FormData, k: string) => String(fd.get(k) ?? '').trim();
 
@@ -41,4 +42,9 @@ export function dbMessage(e: { code?: string; message: string }): string {
   if (e.code === '23514') return 'ערך לא תקין (אם זה סטטוס "רשימת המתנה" - צריך להריץ את 0027_waiting_list.sql ב-Supabase)';
   if (e.code === 'PGRST204') return 'חסרה עמודה במסד הנתונים - צריך להריץ את המיגרציה האחרונה ב-Supabase';
   return e.message;
+}
+
+/** פעולה של מנהל בלבד: אחרת חוזרים עם הודעה (בלי לגעת בנתונים) */
+export async function adminOnly(back: string): Promise<void> {
+  if ((await getRole()) !== 'admin') fail(back, 'רק מנהל יכול לבצע את הפעולה הזו');
 }

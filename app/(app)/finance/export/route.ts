@@ -4,11 +4,13 @@ import { loadBilling, loadStudentNames } from '@/lib/data';
 import { xlsxResponse } from '@/lib/export';
 import { buildEntries, type Entry } from '@/lib/finance';
 import { ensureRecurring } from '@/lib/recurring';
+import { getRole } from '@/lib/roles';
 import { createClient } from '@/lib/supabase/server';
 import { fullName, type Transaction } from '@/lib/types';
 
 /** כל ההכנסות וההוצאות של שנה לאקסל (לרואה החשבון) */
 export async function GET(req: NextRequest) {
+  if ((await getRole()) !== 'admin') return new Response('אין הרשאה', { status: 403 });
   const db = await createClient();
   const year = /^\d{4}$/.test(req.nextUrl.searchParams.get('year') ?? '')
     ? req.nextUrl.searchParams.get('year')!
