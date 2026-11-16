@@ -364,11 +364,11 @@ export function StudentAccount({
             <input type="hidden" name="back" value={here} />
             <p className="muted">
               למשל ילד/ה קטן/ה שלא יכול/ה ללמוד עדיין, ואנחנו מסכימים שלא ימשיכו. השיעורים שכבר חויבו יחויבו מחדש
-              ב-{shekel(Number(settings.price_trial ?? 55))} לשיעור בלבד (במקום המחיר הרגיל / מכבי / פיקדון), והתלמיד/ה יסומן/תסומן כלא פעיל/ה.
+              ב-{shekel(Number(settings.price_trial ?? 75))} לשיעור בלבד (במקום המחיר הרגיל / מכבי / פיקדון), והתלמיד/ה יסומן/תסומן כלא פעיל/ה.
             </p>
             <label className="check"><input type="checkbox" name="release" value="1" defaultChecked /> גם להסיר את השיבוץ הקבוע (לפנות את המקום אצל המורה)</label>
             <div className="form-foot">
-              <ConfirmButton className="btn btn-danger" message={`${student.first_name} לא ממשיך/ה אחרי שיעור ניסיון? החיוב יהיה ${shekel(Number(settings.price_trial ?? 55))} לשיעור בלבד`}>
+              <ConfirmButton className="btn btn-danger" message={`${student.first_name} לא ממשיך/ה אחרי שיעור ניסיון? החיוב יהיה ${shekel(Number(settings.price_trial ?? 75))} לשיעור בלבד`}>
                 לא ממשיכים: חיוב שיעור ניסיון בלבד
               </ConfirmButton>
             </div>

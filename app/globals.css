@@ -939,3 +939,40 @@ a.link-chip:hover { text-decoration: underline; }
 .mini-board td.pair-cell .slot small { display: none; }
 .perm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px 16px; }
 .perm-grid-wide { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
+
+/* דף מידע למזכירה */
+.info-sheet { background: var(--card, #fff); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; }
+.info-head { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 3px solid currentColor; padding-bottom: 6px; margin-bottom: 8px; }
+.info-head h1 { margin: 0; font-size: 1.6rem; }
+.info-part { margin-top: 22px; }
+.info-part h2 { font-size: 1.35rem; margin: 0 0 8px; padding: 6px 10px; background: #eef1f8; border-radius: 8px; }
+.info-part h3 { font-size: 1.1rem; margin: 18px 0 6px; }
+.info-part h4 { margin: 0 0 6px; font-size: 1.05rem; }
+.info-note { margin: 0 0 6px; }
+.info-table { font-size: 0.95rem; }
+.info-table td:first-child { white-space: nowrap; }
+.info-days { white-space: pre-line; }
+.info-time { unicode-bidi: isolate; white-space: nowrap; }
+.info-alert { margin: 14px 0; padding: 12px 14px; border: 2px solid #c47a00; border-radius: 10px; background: #fff8e8; break-inside: avoid; }
+.info-alert h4 { margin: 0 0 6px; font-size: 1.1rem; }
+.info-alert p { margin: 0 0 6px; }
+.info-example-title { font-weight: 600; }
+.info-box-wide { grid-column: 1 / -1; border: 2px solid #c47a00; background: #fff8e8; }
+.info-box ol { margin: 4px 0 0; padding-inline-start: 20px; }
+@media print { .info-alert, .info-box-wide { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+.info-option td { background: #f2f2f2; color: #555; }
+.info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.info-box { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; break-inside: avoid; }
+.info-box ul, .info-list { margin: 0; padding-inline-start: 18px; }
+.info-box li, .info-list li { margin-bottom: 4px; }
+.info-checklist { list-style: none; padding: 0; margin: 0; columns: 2; }
+.info-checklist li { margin-bottom: 6px; break-inside: avoid; }
+.info-checklist li::before { content: '☐ '; font-size: 1.1em; }
+@media print {
+  .info-sheet { border: 0; padding: 0; }
+  .info-table { font-size: 10pt; }
+  .info-table tr { break-inside: avoid; }
+  .info-part h2, .info-option td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .info-part h2, .info-part h3 { break-after: avoid; }
+  .info-part + .info-part { break-before: page; }
+}

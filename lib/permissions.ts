@@ -25,6 +25,7 @@ export const SCREENS: Screen[] = [
   { perm: 'choirs', href: '/choirs', label: 'מקהלות', icon: '♫' },
   { perm: 'branches', href: '/branches', label: 'סניפים וחדרים', icon: '⌂' },
   { perm: 'instruments', href: '/instruments', label: 'כלי נגינה', icon: '♬' },
+  { perm: 'info', href: '/info', label: 'דף מידע', icon: 'ⓘ' },
 ];
 
 /** מסכים של מנהל בלבד, שאי אפשר לתת לתפקיד אחר */

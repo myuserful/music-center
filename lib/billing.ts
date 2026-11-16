@@ -31,7 +31,7 @@ export function upfrontPrice(track: PaymentTrack, s: BillingSettings): number | 
     case 'fund_deposit': return Number(s.price_fund_deposit);
     // לאומית: לא משלמים, מביאים התחייבות על כל שיעור
     case 'fund_commitment': return 0;
-    case 'trial': return Number(s.price_trial ?? 55);
+    case 'trial': return Number(s.price_trial ?? 75);
     // 'unknown', או ערך ישן מלפני 0041
     default: return null;
   }

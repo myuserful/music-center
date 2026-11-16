@@ -181,7 +181,7 @@ async function loadBillingCore(db: DB, studentId?: number) {
   if (firstError) throw new Error(firstError.message);
   const defaults: BillingSettings = {
     price_private: 75, price_maccabi_full: 140, price_maccabi_upfront: 45, price_maccabi_later: 95,
-    price_fund_deposit: 75, maccabi_later_months: 2, price_trial: 55,
+    price_fund_deposit: 75, maccabi_later_months: 2, price_trial: 75,
   };
   return {
     settings: missing ? defaults : settings.data as BillingSettings,

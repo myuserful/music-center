@@ -417,7 +417,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: SP 
             <label>מכבי: זיכוי מכבי (אחר כך)<input name="price_maccabi_later" type="number" min="0" step="any" defaultValue={s.price_maccabi_later} required /></label>
             <label>מכבי: חודשים להשלמת הזיכוי<input name="maccabi_later_months" type="number" min="1" max="12" defaultValue={s.maccabi_later_months} required /></label>
             <label>כללית / מאוחדת / לאומית: פיקדון<input name="price_fund_deposit" type="number" min="0" step="any" defaultValue={s.price_fund_deposit} required /></label>
-            <label>שיעור ניסיון (לא ממשיכים)<input name="price_trial" type="number" min="0" step="any" defaultValue={s.price_trial ?? 55} required /></label>
+            <label>שיעור ניסיון (לא ממשיכים)<input name="price_trial" type="number" min="0" step="any" defaultValue={s.price_trial ?? 75} required /></label>
           </div>
           <p className="muted">שינוי מחיר חל על שיעורים שייסגרו מעכשיו. שיעורים שכבר חויבו נשארים במחיר שלהם.</p>
           <div className="form-foot"><button className="btn btn-primary">שמירת מחירון</button></div>
