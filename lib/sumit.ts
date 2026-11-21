@@ -66,6 +66,46 @@ export function sumitPayment(r: Pick<ReceiptRequest, 'amount' | 'method' | 'refe
   }
 }
 
+const isPdf = (b: Uint8Array) => b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46; // %PDF
+
+/**
+ * מוריד את קובץ הקבלה (PDF) מ-SUMIT, כמו שהוא, בלי לשנות בו דבר.
+ * לפי מזהה המסמך (getpdf, מבקשים מקור אם עוד אפשר: אחרי שהמקור כבר הופק, SUMIT נותן "העתק נאמן למקור").
+ * בלי מזהה: מהקישור שנשמר בהפקה. זורק שגיאה בעברית אם לא התקבל PDF
+ */
+export async function sumitDownloadDocument(doc: { documentId: number | null; url: string; number: string }): Promise<Uint8Array> {
+  const fail = (why: string) => new Error(`לא הצלחתי להוריד את קבלה ${doc.number} מ-SUMIT (${why}). אפשר להוריד אותה ביד ולצרף כקובץ`);
+  let res: Response;
+  if (doc.documentId) {
+    if (!sumitConfigured()) throw fail('חסרים מפתחות SUMIT');
+    try {
+      res = await fetch(`${API}/accounting/documents/getpdf/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Language': 'he' },
+        body: JSON.stringify({
+          Credentials: { CompanyID: Number(process.env.SUMIT_COMPANY_ID), APIKey: process.env.SUMIT_API_KEY },
+          DocumentID: doc.documentId, Original: true,
+        }),
+        cache: 'no-store',
+      });
+    } catch { throw fail('אין חיבור'); }
+  } else {
+    let host = '';
+    try { const u = new URL(doc.url); if (u.protocol === 'https:') host = u.hostname; } catch { /* קישור לא תקין */ }
+    if (!/(^|\.)sumit\.co\.il$/.test(host)) throw fail('הקישור השמור אינו של SUMIT');
+    try { res = await fetch(doc.url, { cache: 'no-store' }); } catch { throw fail('אין חיבור'); }
+  }
+  if (!res.ok) throw fail(`שגיאה ${res.status}`);
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  if (!isPdf(bytes)) {
+    // שגיאה מ-SUMIT חוזרת כ-JSON עם הודעה
+    let why = 'לא התקבל קובץ PDF';
+    try { why = (JSON.parse(new TextDecoder().decode(bytes)) as SumitResponse<unknown>).UserErrorMessage || why; } catch { /* לא JSON */ }
+    throw fail(why);
+  }
+  return bytes;
+}
+
 /** הפקת קבלה ב-SUMIT. מחזיר את מספר הקבלה ואת הקישור אליה */
 export async function sumitCreateReceipt(r: ReceiptRequest) {
   const d = await call<{ DocumentID: number; DocumentNumber: number | null; DocumentDownloadURL: string | null }>(

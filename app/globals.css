@@ -949,6 +949,7 @@ a.link-chip:hover { text-decoration: underline; }
 .receipt-mail label:not(.check) { display: flex; flex-direction: column; gap: 4px; }
 .receipt-mail textarea { resize: vertical; font: inherit; }
 .receipt-mail .btn { align-self: flex-start; }
+.receipt-originals { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px dashed var(--line); }
 
 /* לימוד בבית המורה: משבצות ממוספרות מתחת ללוח של המורה */
 .home-strip { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 10px; margin-top: 10px; padding-top: 8px; border-top: 1px dashed #cfcbe3; }

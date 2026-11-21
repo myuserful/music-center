@@ -6,8 +6,9 @@ import { loadBilling, loadHistory, loadReceipts } from '@/lib/data';
 import type { ReceiptField } from '@/lib/constants';
 import { sendMail, studentEmail } from '@/lib/mail';
 import { pdfResponse } from '@/lib/pdf';
-import { referralHolder } from '@/lib/receiptMail';
+import { MAX_UPLOAD_BYTES, referralHolder } from '@/lib/receiptMail';
 import { receiptPdfFile } from '@/lib/receiptPdf';
+import { sumitDownloadDocument } from '@/lib/sumit';
 import { createClient } from '@/lib/supabase/server';
 import { fullName, type Student } from '@/lib/types';
 
@@ -18,7 +19,8 @@ const ISO = /^\d{4}-\d{2}-\d{2}$/;
  * source=lessons: התאריכים הם השיעורים שהתלמיד/ה הגיע/ה אליהם בפועל (ימים סגורים) בין from ל-to,
  * והסכום הוא מחיר מכבי המלא לכל שיעור. אחרת: ידני, התאריכים נשלחים מהטופס (d), כל תאריך שנבחר.
  * כל קבלה נשמרת ב-receipt_certificates, ומורידים אותה שוב מ-/certificates/[id].
- * send_email=1: נשלחת גם למייל של התלמיד/ה, עם הנושא (subject) והגוף (body) מהטופס
+ * send_email=1: נשלחת גם למייל של התלמיד/ה, עם הנושא (subject) והגוף (body) מהטופס.
+ * לאותו מייל אפשר לצרף את הקבלות המקוריות, כמו שהן: orig = קבלות SUMIT של התלמיד/ה (מורדות מ-SUMIT), orig_file = קבצים שהועלו
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -84,10 +86,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!to) return failed('המייל לא נשלח: אין מייל תקין בכרטיס התלמיד/ה.');
     if (!subject || !text) return failed('המייל לא נשלח: חסר נושא או תוכן.');
     try {
-      await sendMail({
-        to, subject, text,
-        attachments: [{ filename: filename.replace(/[\/:*?"<>|]/g, ''), content: bytes, contentType: 'application/pdf' }],
-      });
+      const safe = (n: string) => n.replace(/[\/:*?"<>|]/g, '');
+      const attachments = [{ filename: safe(filename), content: bytes, contentType: 'application/pdf' }];
+      // הקבלות המקוריות מ-SUMIT שנבחרו (רק של התלמיד/ה הזה/ו), כמו שהן
+      const ids = new Set(q.getAll('orig').map(Number));
+      if (ids.size) {
+        const { receipts } = await loadReceipts(db, s.id);
+        const picked = receipts.filter((r) => ids.has(r.id) && r.source === 'sumit' && (r.sumit_document_id || r.url));
+        const files = await Promise.all(picked.map((r) => sumitDownloadDocument({ documentId: r.sumit_document_id, url: r.url, number: r.number })));
+        picked.forEach((r, i) => attachments.push({ filename: `קבלה ${r.number}.pdf`, content: files[i], contentType: 'application/pdf' }));
+      }
+      // קבצים שהועלו (קבלה שלא נמצאת במערכת, למשל מאשראי)
+      const uploads = fd.getAll('orig_file').filter((f): f is File => f instanceof File && f.size > 0);
+      if (uploads.some((f) => f.type !== 'application/pdf' && !f.type.startsWith('image/'))) throw new Error('המייל לא נשלח: אפשר לצרף רק קובצי PDF או תמונות.');
+      if (uploads.reduce((n, f) => n + f.size, 0) > MAX_UPLOAD_BYTES) throw new Error('המייל לא נשלח: הקבצים שצורפו גדולים מדי (עד 3MB בסך הכול).');
+      for (const f of uploads) attachments.push({ filename: safe(f.name) || 'קבלה מקורית', content: new Uint8Array(await f.arrayBuffer()), contentType: f.type });
+      await sendMail({ to, subject, text, attachments });
     } catch (e) {
       return failed(e instanceof Error ? e.message : 'שליחת המייל נכשלה');
     }

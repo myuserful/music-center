@@ -13,7 +13,7 @@ import { can } from '@/lib/roles';
 import { StudentStatusFields } from '@/components/StudentStatusFields';
 import { BackLink, Empty, Flash, one, PageHead, StatusActions, StatusBadge, type SP } from '@/components/ui';
 import { isoDate } from '@/lib/age';
-import { SIBLING_CYCLE, SIBLING_DEFAULT_AMOUNT } from '@/lib/billing';
+import { account, SIBLING_CYCLE, SIBLING_DEFAULT_AMOUNT } from '@/lib/billing';
 import { attendedDates, isClosed } from '@/lib/day';
 import {
   addEnrollment, deleteEnrollment, deleteLesson, setEnrollmentStatus, setLessonStatus,
@@ -26,7 +26,7 @@ import {
 } from '@/lib/constants';
 import { loadAll, loadBilling, loadCertificates, loadHistory, loadReceipts } from '@/lib/data';
 import { studentEmail } from '@/lib/mail';
-import { referralHolder } from '@/lib/receiptMail';
+import { originalReceipts, referralHolder } from '@/lib/receiptMail';
 import { normalizePhone, siblingsOf } from '@/lib/siblings';
 import { createClient } from '@/lib/supabase/server';
 import { sumitConfigured } from '@/lib/sumit';
@@ -85,6 +85,7 @@ export default async function StudentPage({ params, searchParams }: { params: Pr
             studentId={s.id} name={fullName(s)} idNumber={s.id_number} referral={referralHolder(s)}
             email={studentEmail(s)} days={receiptDays} gender={s.gender}
             attended={attendedDates(history!.lessons, history!.closures)} price={Number(loadedBilling!.settings.price_maccabi_full)}
+            originals={originalReceipts(receipts!.receipts, account(loadedBilling!.charges, loadedBilling!.payments, new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' })).lines)}
           />
         )}
         {!isNew && <Link className="btn btn-primary" href={`/lessons/new?student=${s.id}`}>+ שיבוץ שיעור</Link>}

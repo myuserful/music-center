@@ -5,7 +5,7 @@ import { useRef, useState } from 'react';
 import { ACTIVITY_YEAR, offName, shortDate, weekdayDates } from '@/lib/activityDays';
 import { isoDate } from '@/lib/age';
 import { BOARD_DAYS, DAYS, RECEIPT_FIELD_LABELS, type Gender, type ReceiptField } from '@/lib/constants';
-import { receiptMail } from '@/lib/receiptMail';
+import { MAX_UPLOAD_BYTES, originalsFor, receiptMail, type OriginalReceipt } from '@/lib/receiptMail';
 
 /**
  * כפתור "הפקת קבלה": אישור קבלה ב-PDF (לקופה, למשל מכבי).
@@ -14,9 +14,10 @@ import { receiptMail } from '@/lib/receiptMail';
  * ידני: סכום, ימי פעילות ומספר פעילויות. התאריכים מחושבים מהם, ואפשר להסיר ולהוסיף כל תאריך.
  * כל קבלה שנוצרת נשמרת (בדף "אישורי קבלה" ובכרטיס התלמיד/ה) כדי שאפשר יהיה להוריד אותה שוב.
  * יש מייל תקין בכרטיס: אפשר לשלוח את הקבלה במייל כבר בהפקה, עם נושא וגוף מוצעים שאפשר לערוך.
- * יש בכרטיס שם ות"ז על ההפניה: בוחרים על שם מי האישור
+ * יש בכרטיס שם ות"ז על ההפניה: בוחרים על שם מי האישור.
+ * למייל אפשר לצרף גם את הקבלות המקוריות, כמו שהן: קבלות SUMIT של התשלומים ששילמו את השיעורים (מסומנות מראש), וקבצים שמעלים
  */
-export function ReceiptButton({ studentId, name, idNumber, referral, email, days, gender, attended, price }: {
+export function ReceiptButton({ studentId, name, idNumber, referral, email, days, gender, attended, price, originals }: {
   studentId: number; name: string; idNumber: string;
   /** השם ות"ז שעל ההפניה. null = לא מולאו, והאישור על שם התלמיד/ה */
   referral: { name: string; idNumber: string } | null;
@@ -25,6 +26,8 @@ export function ReceiptButton({ studentId, name, idNumber, referral, email, days
   days: number[]; gender: Gender | null;
   /** תאריכי השיעורים שהתלמיד/ה הגיע/ה אליהם (ימים סגורים) */
   attended: string[]; price: number;
+  /** הקבלות המקוריות מ-SUMIT שאפשר לצרף למייל */
+  originals: OriginalReceipt[];
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const today = isoDate(new Date());
@@ -43,10 +46,18 @@ export function ReceiptButton({ studentId, name, idNumber, referral, email, days
   // null = הנוסח המוצע (מתעדכן לפי התאריכים), אחרי עריכה - מה שנכתב
   const [subject, setSubject] = useState<string | null>(null);
   const [body, setBody] = useState<string | null>(null);
+  // null = הקבלות ששילמו את התאריכים שבאישור, אחרי שינוי ביד - מה שסומן
+  const [origPicked, setOrigPicked] = useState<number[] | null>(null);
+  const [uploadBytes, setUploadBytes] = useState(0);
   const router = useRouter();
 
   const lessonDates = attended.filter((d) => d >= range.from && d <= range.to);
-  const suggested = receiptMail({ name: onReferral && referral ? referral.name : name, dates: mode === 'lessons' ? lessonDates : dates, field });
+  const certDates = mode === 'lessons' ? lessonDates : dates;
+  const orig = origPicked ?? originalsFor(originals, certDates);
+  const tooBig = uploadBytes > MAX_UPLOAD_BYTES;
+  const suggested = receiptMail({
+    name: onReferral && referral ? referral.name : name, dates: certDates, field, originals: orig.length > 0 || uploadBytes > 0,
+  });
 
   const mailFields = email && (
     <fieldset className="receipt-mail">
@@ -61,6 +72,25 @@ export function ReceiptButton({ studentId, name, idNumber, referral, email, days
           {(subject !== null || body !== null) && (
             <button type="button" className="btn btn-ghost btn-xs" onClick={() => { setSubject(null); setBody(null); }}>חזרה לנוסח המוצע</button>
           )}
+          <div className="receipt-originals">
+            <strong>צירוף הקבלות המקוריות</strong>
+            {originals.length === 0 && <span className="muted">אין לתלמיד/ה קבלות מ-SUMIT במערכת. אפשר להעלות קובץ</span>}
+            {originals.map((o) => (
+              <label key={o.id} className="check">
+                <input type="checkbox" name="orig" value={o.id} checked={orig.includes(o.id)}
+                  onChange={(e) => setOrigPicked(e.target.checked ? [...orig, o.id] : orig.filter((x) => x !== o.id))} />
+                {' '}קבלה {o.number} · {o.amount} ₪ · <span dir="ltr">{shortDate(o.issuedOn)}</span>
+                {o.dates.length > 0 && <span className="muted"> · שיעורים {o.dates.map(shortDate).join(', ')}</span>}
+              </label>
+            ))}
+            <label>
+              קבלה שלא נמצאת כאן (PDF או תמונה, עד 3MB)
+              <input type="file" name="orig_file" multiple accept="application/pdf,image/*"
+                onChange={(e) => setUploadBytes([...(e.target.files ?? [])].reduce((n, f) => n + f.size, 0))} />
+            </label>
+            {tooBig && <p className="flash flash-error">הקבצים גדולים מדי: עד 3MB בסך הכול</p>}
+            <span className="muted">הקבלות מצורפות כמו שהן, בלי שינוי</span>
+          </div>
         </>
       )}
     </fieldset>
@@ -78,7 +108,7 @@ export function ReceiptButton({ studentId, name, idNumber, referral, email, days
     <>
       <button type="button" className="btn" onClick={() => dialog.current?.showModal()}>הפקת קבלה</button>
       <dialog ref={dialog} className="receipt-dialog" onClick={(e) => e.target === dialog.current && dialog.current.close()}>
-        <form className="receipt-form" action={`/students/${studentId}/receipt`} method="post" target="_blank"
+        <form className="receipt-form" action={`/students/${studentId}/receipt`} method="post" encType="multipart/form-data" target="_blank"
           onSubmit={() => { dialog.current?.close(); setTimeout(() => router.refresh(), send ? 5000 : 1500); }}>
           <div className="dash-head">
             <h2>הפקת אישור קבלה</h2>
@@ -130,7 +160,7 @@ export function ReceiptButton({ studentId, name, idNumber, referral, email, days
               <p className="muted dash-sub">רק שיעורים שהתלמיד/ה הגיע/ה אליהם, מימים סגורים. אפשר לשנות את הסכום</p>
               {mailFields}
               <div className="form-foot">
-                <button className="btn btn-primary" disabled={lessonDates.length === 0}>{submitText}</button>
+                <button className="btn btn-primary" disabled={lessonDates.length === 0 || (send && tooBig)}>{submitText}</button>
               </div>
             </>
           ) : (
@@ -182,7 +212,7 @@ export function ReceiptButton({ studentId, name, idNumber, referral, email, days
 
               {mailFields}
               <div className="form-foot">
-                <button className="btn btn-primary" disabled={dates.length === 0}>{submitText}</button>
+                <button className="btn btn-primary" disabled={dates.length === 0 || (send && tooBig)}>{submitText}</button>
               </div>
             </>
           )}
