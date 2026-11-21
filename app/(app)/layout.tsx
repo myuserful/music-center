@@ -1,4 +1,5 @@
 import { Nav } from '@/components/Nav';
+import { StaffChat } from '@/components/StaffChat';
 import { logout } from '@/lib/actions/settings';
 import { LOCAL_NO_AUTH } from '@/lib/auth';
 import { getPermissions, getRole, isStaff, ROLE_LABELS } from '@/lib/roles';
@@ -43,6 +44,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         )}
       </aside>
       <main className="main">{children}</main>
+      <StaffChat />
     </div>
   );
 }
