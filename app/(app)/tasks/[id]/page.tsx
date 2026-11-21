@@ -4,7 +4,7 @@ import { ConfirmButton } from '@/components/ConfirmButton';
 import { TaskFields } from '@/components/TaskFields';
 import { BackLink, Flash, PageHead, type SP } from '@/components/ui';
 import { deleteTask, saveTask } from '@/lib/actions/tasks';
-import { DAYS, TASK_TYPE_ICONS, TASK_TYPE_LABELS } from '@/lib/constants';
+import { DAYS, normAssignee, TASK_TYPE_ICONS, TASK_TYPE_LABELS } from '@/lib/constants';
 import { getRole, getUserId } from '@/lib/roles';
 import { createClient, type DB } from '@/lib/supabase/server';
 import { defaultAssignee, loadTaskOptions } from '@/lib/taskData';
@@ -47,7 +47,7 @@ export default async function TaskPage({ params, searchParams }: { params: Promi
   const [{ data }, role, uid] = await Promise.all([
     db.from('tasks').select('*').eq('id', Number(id)).maybeSingle(), getRole(), getUserId(),
   ]);
-  const task = data as Task | null;
+  const task = data ? { ...(data as Task), assignee: normAssignee((data as Task).assignee) } : null;
   if (!task || !canSeeTask(task, role, uid)) notFound();
   const [options, assignee, ctx] = await Promise.all([loadTaskOptions(db), defaultAssignee(), loadContext(db, task)]);
   const type = typeOf(task);

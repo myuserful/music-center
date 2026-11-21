@@ -615,14 +615,14 @@ tr.inactive td { opacity: 0.5; }
 .task-due.late { color: var(--danger); font-weight: 600; }
 .task-move { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
 .task-move .btn { padding: 2px 8px; font-size: 0.72rem; }
-.task-who-yanky { background: var(--blue-soft); color: var(--blue); }
-.task-who-shevi { background: var(--coral-soft); color: #b8432f; }
-.task-who-both { background: var(--mint-soft); color: var(--mint-dark); }
+.task-who-manager { background: var(--blue-soft); color: var(--blue); }
+.task-who-manageress { background: var(--coral-soft); color: #b8432f; }
+.task-who-management { background: var(--mint-soft); color: var(--mint-dark); }
 .task-who-secretary { background: var(--yellow-soft); color: var(--yellow-dark); }
 .task-hint { display: block; font-size: 0.78rem; color: var(--muted); font-weight: 400; margin-top: 4px; }
 .task-times { border: 0; padding: 0; margin: 0; display: flex; gap: 12px; flex-wrap: wrap; }
 .task-times legend { font-weight: 500; font-size: 0.88rem; padding: 0; margin-bottom: 6px; }
-.task-type { background: var(--bg); color: var(--ink); font-weight: 500; }
+.task-type { white-space: normal; max-width: 100%; text-align: start; background: var(--bg); color: var(--ink); font-weight: 500; }
 .task-type-schedule_change { background: var(--coral-soft); color: #b8432f; }
 .task-people { margin: 4px 0 0; font-size: 0.82rem; font-weight: 500; color: var(--ink); }
 .task-due.soon { color: var(--pending); }
@@ -638,6 +638,23 @@ tr.inactive td { opacity: 0.5; }
 .hot-item.late { background: var(--danger-bg); }
 .hot-title { font-weight: 600; color: var(--ink); flex: 1 1 200px; }
 .hot-icon { width: 1.4em; text-align: center; }
+.task-cals { display: flex; flex-wrap: wrap; gap: 16px; }
+.cal { position: relative; border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; width: 100%; max-width: 300px; background: var(--card); }
+.cal-label { font-weight: 600; font-size: 0.9rem; margin-bottom: 6px; }
+.cal-value { position: absolute; inset-block-end: 0; inset-inline-start: 50%; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.cal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; }
+.cal-dow { font-size: 0.72rem; color: var(--muted); padding: 2px 0; }
+.cal-day { border: 0; background: none; border-radius: 8px; padding: 6px 0; font: inherit; font-size: 0.85rem; cursor: pointer; color: var(--ink); }
+.cal-day:hover { background: var(--brand-soft); }
+.cal-day.past { color: var(--muted); }
+.cal-day.today { box-shadow: inset 0 0 0 1px var(--brand); font-weight: 700; }
+.cal-day.marked { background: var(--yellow-soft); color: var(--yellow-dark); font-weight: 600; }
+.cal-day.selected { background: var(--brand); color: #fff; font-weight: 700; }
+.cal-foot { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-top: 6px; font-size: 0.84rem; min-height: 26px; }
+.task-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.task-filters label { display: flex; gap: 4px; align-items: center; font-size: 0.84rem; }
+.task-filters input[type=date] { width: auto; }
 
 /* ---- טלפונים להורים ---- */
 .kanban-calls { grid-template-columns: repeat(4, minmax(0, 1fr)); }

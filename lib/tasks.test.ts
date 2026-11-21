@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { byPriority, canDeleteTask, canSeeTask, daysUntil, dueLabel, isHot, missingField, priorityScore, taskDate } from './tasks';
+import {
+  byPriority, canDeleteTask, canSeeTask, daysUntil, dueLabel, inDateRange, isHot, matchesAssignee, missingField, priorityScore, taskDate,
+} from './tasks';
 import type { Task } from './types';
 
 const TODAY = '2026-11-21';
 let nextId = 1;
 const task = (t: Partial<Task> = {}): Task => ({
-  id: nextId++, title: 'משימה', due_date: null, kind: '', description: '', assignee: 'both', status: 'todo',
+  id: nextId++, title: 'משימה', due_date: null, kind: '', description: '', assignee: 'management', status: 'todo',
   position: 0, created_at: '', task_type: 'admin', urgency: 'normal', ...t,
 });
 const order = (tasks: Task[]) => [...tasks].sort(byPriority(TODAY)).map((t) => t.title);
@@ -51,13 +53,14 @@ describe('priorityScore / byPriority', () => {
     ])).toEqual(['דחוף', 'רגיל', 'לא דחוף']);
   });
 
-  it('שינוי במערכת השעות הכי דחוף באותו תאריך ובאותה דחיפות', () => {
+  it('משימות שיבוץ לפני משימות כלליות באותו תאריך ובאותה דחיפות', () => {
     expect(order([
-      task({ title: 'מנהלית', due_date: '2026-11-23' }),
-      task({ title: 'להודיע להורים', task_type: 'notify_parents', due_date: '2026-11-23' }),
-      task({ title: 'מורה לא מגיע', task_type: 'teacher_absent', date_from: '2026-11-23' }),
-      task({ title: 'שינוי מערכת', task_type: 'schedule_change', date_from: '2026-11-23' }),
-    ])).toEqual(['שינוי מערכת', 'מורה לא מגיע', 'מנהלית', 'להודיע להורים']);
+      task({ title: 'מנהלית', due_date: '2026-11-23', position: 1 }),
+      task({ title: 'להודיע להורים', task_type: 'notify_parents', due_date: '2026-11-23', position: 2 }),
+      task({ title: 'מורה לא מגיע', task_type: 'teacher_absent', date_from: '2026-11-23', position: 3 }),
+      task({ title: 'שינוי מערכת', task_type: 'schedule_change', date_from: '2026-11-23', position: 4 }),
+      task({ title: 'העברת שיעור', task_type: 'student_move', date_from: '2026-11-25', date_to: '2026-11-23', position: 5 }),
+    ])).toEqual(['מורה לא מגיע', 'שינוי מערכת', 'העברת שיעור', 'מנהלית', 'להודיע להורים']);
   });
 
   it('דחוף בלי תאריך לפני רגיל בלי תאריך', () => {
@@ -99,11 +102,11 @@ describe('dueLabel', () => {
 describe('הרשאות', () => {
   const me = 'user-1';
   it('מנהל רואה הכול, מזכירה רק של מזכירה ומה שפתחה', () => {
-    expect(canSeeTask({ assignee: 'yanky', created_by: null }, 'admin', 'x')).toBe(true);
+    expect(canSeeTask({ assignee: 'manager', created_by: null }, 'admin', 'x')).toBe(true);
     expect(canSeeTask({ assignee: 'secretary', created_by: null }, 'secretary', me)).toBe(true);
-    expect(canSeeTask({ assignee: 'yanky', created_by: me }, 'secretary', me)).toBe(true);
-    expect(canSeeTask({ assignee: 'both', created_by: 'other' }, 'secretary', me)).toBe(false);
-    expect(canSeeTask({ assignee: 'both', created_by: null }, 'secretary', null)).toBe(false);
+    expect(canSeeTask({ assignee: 'manager', created_by: me }, 'secretary', me)).toBe(true);
+    expect(canSeeTask({ assignee: 'management', created_by: 'other' }, 'secretary', me)).toBe(false);
+    expect(canSeeTask({ assignee: 'management', created_by: null }, 'secretary', null)).toBe(false);
     expect(canSeeTask({ assignee: 'secretary', created_by: null }, 'teacher', me)).toBe(false);
   });
   it('מזכירה מוחקת רק מה שפתחה', () => {
@@ -124,5 +127,24 @@ describe('missingField', () => {
     expect(missingField('student_absent', { ...empty, student_id: 1, date_from: TODAY })).toBeNull();
     expect(missingField('student_absent', { ...empty, student_id: 1, date_from: TODAY, time_from: '16:00', time_to: '15:00' }))
       .toMatch(/שעת הסיום/);
+  });
+});
+
+describe('סינון', () => {
+  it('מנהל ומנהלת רואים גם משימות של ההנהלה', () => {
+    expect(matchesAssignee({ assignee: 'management' }, 'manager')).toBe(true);
+    expect(matchesAssignee({ assignee: 'management' }, 'manageress')).toBe(true);
+    expect(matchesAssignee({ assignee: 'management' }, 'secretary')).toBe(false);
+    expect(matchesAssignee({ assignee: 'manager' }, 'manageress')).toBe(false);
+    expect(matchesAssignee({ assignee: 'secretary' }, '')).toBe(true);
+  });
+  it('טווח תאריכים: אחד מהתאריכים בטווח', () => {
+    const move = task({ date_from: '2026-11-23', date_to: '2026-11-25' });
+    expect(inDateRange(move, '', '')).toBe(true);
+    expect(inDateRange(move, '2026-11-25', '2026-11-30')).toBe(true);
+    expect(inDateRange(move, '2026-11-24', '2026-11-24')).toBe(false);
+    expect(inDateRange(move, '', '2026-11-23')).toBe(true);
+    expect(inDateRange(task({ due_date: '2026-12-01' }), '2026-11-21', '2026-11-27')).toBe(false);
+    expect(inDateRange(task(), TODAY, TODAY)).toBe(false);
   });
 });

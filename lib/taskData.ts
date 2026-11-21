@@ -1,4 +1,4 @@
-import type { Assignee } from './constants';
+import { normAssignee, type Assignee } from './constants';
 import { getRole, getUserId } from './roles';
 import type { DB } from './supabase/server';
 import type { Task } from './types';
@@ -17,12 +17,14 @@ export async function loadTasks(db: DB, opts: { openOnly?: boolean } = {}) {
   }
   if (opts.openOnly) q = q.neq('status', 'done');
   const { data, error } = await q.order('position');
-  return { tasks: (data ?? []) as Task[], error };
+  // לפני 0066: יענקי / שבי / שניהם
+  const tasks = ((data ?? []) as Task[]).map((t) => ({ ...t, assignee: normAssignee(t.assignee) }));
+  return { tasks, error };
 }
 
 /** ברירת המחדל של "מי עושה?" במשימה חדשה */
 export async function defaultAssignee(): Promise<Assignee> {
-  return (await getRole()) === 'secretary' ? 'secretary' : 'both';
+  return (await getRole()) === 'secretary' ? 'secretary' : 'management';
 }
 
 /** רשימות לבחירה בטופס: מורים ותלמידים */

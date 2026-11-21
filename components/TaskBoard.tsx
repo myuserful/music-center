@@ -5,10 +5,12 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
 import { moveTask } from '@/lib/actions/tasks';
 import {
-  ASSIGNEE_LABELS, TASK_STATUS_LABELS, TASK_STATUSES, TASK_TYPE_ICONS, TASK_TYPE_LABELS, TASK_TYPES, URGENCY_LABELS,
-  type TaskStatus,
+  ASSIGNEE_LABELS, SCHEDULING_TASK_TYPES, TASK_STATUS_LABELS, TASK_STATUSES, TASK_TYPE_ICONS, TASK_TYPE_LABELS, TASK_TYPES,
+  URGENCY_LABELS, type Assignee, type TaskStatus, type TaskType,
 } from '@/lib/constants';
-import { byPriority, dueLabel, FILTER_ASSIGNEES, isHot, taskDate, typeOf, urgencyOf } from '@/lib/tasks';
+import {
+  byPriority, dueLabel, FILTER_ASSIGNEES, inDateRange, isHot, matchesAssignee, taskDate, typeOf, urgencyOf,
+} from '@/lib/tasks';
 import { hhmm } from '@/lib/time';
 import type { Task } from '@/lib/types';
 
@@ -16,6 +18,13 @@ const byPosition = (a: Task, b: Task) => a.position - b.position || a.id - b.id;
 
 type SortMode = 'priority' | 'manual';
 const SORT_KEY = 'tasks-sort';
+
+/** תאריך + ימים (YYYY-MM-DD) */
+function addDays(date: string, n: number): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
 
 /** שמות לפי מזהה, להצגת המורה / התלמיד/ה בכרטיס */
 export type TaskNames = { teachers: Record<number, string>; students: Record<number, string> };
@@ -25,8 +34,11 @@ export function TaskBoard({ tasks: initial, today, names }: { tasks: Task[]; tod
   const [tasks, setTasks] = useState(initial);
   const [dragId, setDragId] = useState<number | null>(null);
   const [over, setOver] = useState<{ status: TaskStatus; before: number | null } | null>(null);
-  const [who, setWho] = useState('');
+  const [who, setWho] = useState<Assignee | ''>('');
+  /** סוג, או "scheduling" לכל משימות השיבוץ */
   const [type, setType] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [sort, setSort] = useState<SortMode>('priority');
   const [error, setError] = useState('');
   const [, startTransition] = useTransition();
@@ -40,9 +52,12 @@ export function TaskBoard({ tasks: initial, today, names }: { tasks: Task[]; tod
     try { localStorage.setItem(SORT_KEY, mode); } catch { /* אין גישה לאחסון */ }
   }
 
-  const visible = tasks.filter((t) =>
-    (!who || t.assignee === who || (t.assignee === 'both' && (who === 'yanky' || who === 'shevi'))) &&
-    (!type || typeOf(t) === type));
+  const matchesType = (t: Task) =>
+    !type || (type === 'scheduling' ? SCHEDULING_TASK_TYPES.includes(typeOf(t)) : typeOf(t) === type);
+  const visible = tasks.filter((t) => matchesAssignee(t, who) && matchesType(t) && inDateRange(t, from, to));
+  const filtered = !!(who || type || from || to);
+  const range = (a: string, b: string) => { setFrom(a); setTo(b); };
+  const option = (t: TaskType) => <option key={t} value={t}>{TASK_TYPE_ICONS[t]} {TASK_TYPE_LABELS[t]}</option>;
   // "הסתיים" תמיד בסדר הידני. בשאר העמודות: לפי עדיפות, או ידני
   const sortFor = (status: TaskStatus) => (sort === 'priority' && status !== 'done' ? byPriority(today) : byPosition);
   const manual = (status: TaskStatus) => sortFor(status) === byPosition;
@@ -90,7 +105,11 @@ export function TaskBoard({ tasks: initial, today, names }: { tasks: Task[]; tod
         </div>
         <select value={type} onChange={(e) => setType(e.target.value)} aria-label="סינון לפי סוג">
           <option value="">כל הסוגים</option>
-          {TASK_TYPES.map((t) => <option key={t} value={t}>{TASK_TYPE_ICONS[t]} {TASK_TYPE_LABELS[t]}</option>)}
+          <optgroup label="שיבוץ">
+            <option value="scheduling">כל משימות השיבוץ</option>
+            {SCHEDULING_TASK_TYPES.map(option)}
+          </optgroup>
+          <optgroup label="כללי">{TASK_TYPES.filter((t) => !SCHEDULING_TASK_TYPES.includes(t)).map(option)}</optgroup>
         </select>
         <div className="task-who" role="group" aria-label="סדר הכרטיסים">
           <button type="button" className={`btn btn-xs ${sort === 'priority' ? 'btn-primary' : ''}`} onClick={() => changeSort('priority')}
@@ -99,6 +118,20 @@ export function TaskBoard({ tasks: initial, today, names }: { tasks: Task[]; tod
             title="הסדר שקובעים בגרירה">סדר ידני</button>
         </div>
         {error && <span className="flash flash-error" role="alert">{error}</span>}
+      </div>
+      {/* טווח תאריכים: דד ליין או תאריכי השיבוץ (מיום / ליום) */}
+      <div className="task-toolbar task-filters" role="group" aria-label="סינון לפי תאריכים">
+        <label>מתאריך<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
+        <label>עד תאריך<input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} /></label>
+        <button type="button" className="btn btn-xs" onClick={() => range(today, today)}>היום</button>
+        <button type="button" className="btn btn-xs" onClick={() => range(addDays(today, 1), addDays(today, 1))}>מחר</button>
+        <button type="button" className="btn btn-xs" onClick={() => range(today, addDays(today, 6))}>7 הימים הקרובים</button>
+        <button type="button" className="btn btn-xs" onClick={() => range('', addDays(today, -1))}>באיחור</button>
+        {filtered && (
+          <button type="button" className="btn btn-xs btn-ghost" onClick={() => { setWho(''); setType(''); range('', ''); }}>
+            ניקוי הסינון ({visible.length} מתוך {tasks.length})
+          </button>
+        )}
       </div>
 
       <div className="kanban">

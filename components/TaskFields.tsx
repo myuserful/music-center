@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import { DateCalendar } from '@/components/DateCalendar';
 import {
-  ASSIGNEE_LABELS, ASSIGNEES, TASK_STATUS_LABELS, TASK_STATUSES, TASK_TYPE_ICONS, TASK_TYPE_LABELS, TASK_TYPES,
-  URGENCIES, URGENCY_LABELS, type Assignee, type TaskType,
+  ASSIGNEE_LABELS, ASSIGNEES, SCHEDULING_TASK_TYPES, TASK_STATUS_LABELS, TASK_STATUSES, TASK_TYPE_ICONS, TASK_TYPE_LABELS,
+  TASK_TYPES, URGENCIES, URGENCY_LABELS, type Assignee, type TaskType,
 } from '@/lib/constants';
 import { TASK_TYPE_FIELDS, typeOf, urgencyOf } from '@/lib/tasks';
 import { hhmm } from '@/lib/time';
@@ -12,19 +13,23 @@ import type { Task } from '@/lib/types';
 export type Option = { id: number; name: string };
 
 /** שדות טופס משימה (חדשה או עריכה). השדות משתנים לפי סוג המשימה */
-export function TaskFields({ task, teachers, students, defaultAssignee = 'both' }: {
+export function TaskFields({ task, teachers, students, defaultAssignee = 'management' }: {
   task?: Task; teachers: Option[]; students: Option[]; defaultAssignee?: Assignee;
 }) {
   const [type, setType] = useState<TaskType>(task ? typeOf(task) : 'admin');
   const f = TASK_TYPE_FIELDS[type];
   const req = (need?: string) => need === 'required';
+  const [dateFrom, setDateFrom] = useState(task?.date_from ?? '');
+  const [dateTo, setDateTo] = useState(task?.date_to ?? '');
+  const option = (t: TaskType) => <option key={t} value={t}>{TASK_TYPE_ICONS[t]} {TASK_TYPE_LABELS[t]}</option>;
 
   return (
     <div className="form-grid">
       <label>
         סוג המשימה
         <select name="task_type" value={type} onChange={(e) => setType(e.target.value as TaskType)}>
-          {TASK_TYPES.map((t) => <option key={t} value={t}>{TASK_TYPE_ICONS[t]} {TASK_TYPE_LABELS[t]}</option>)}
+          <optgroup label="שיבוץ (הכי דחוף)">{SCHEDULING_TASK_TYPES.map(option)}</optgroup>
+          <optgroup label="כללי">{TASK_TYPES.filter((t) => !SCHEDULING_TASK_TYPES.includes(t)).map(option)}</optgroup>
         </select>
         {f.hint && <span className="task-hint">{f.hint}</span>}
       </label>
@@ -53,17 +58,16 @@ export function TaskFields({ task, teachers, students, defaultAssignee = 'both' 
           </select>
         </label>
       )}
+      {/* תאריכי השיבוץ: לוח שנה פתוח. בהעברת שיעור: שני לוחות, מיום וליום */}
       {f.dateFrom && (
-        <label>
-          {f.dateFrom.label}{req(f.dateFrom.need) ? '' : ' (לא חובה)'}
-          <input type="date" name="date_from" defaultValue={task?.date_from ?? ''} required={req(f.dateFrom.need)} />
-        </label>
-      )}
-      {f.dateTo && (
-        <label>
-          {f.dateTo.label}
-          <input type="date" name="date_to" defaultValue={task?.date_to ?? ''} required={req(f.dateTo.need)} />
-        </label>
+        <div className="wide task-cals">
+          <DateCalendar name="date_from" label={f.dateFrom.label} value={dateFrom} onChange={setDateFrom}
+            required={req(f.dateFrom.need)} mark={f.dateTo ? dateTo : undefined} markLabel={f.dateTo?.label} />
+          {f.dateTo && (
+            <DateCalendar name="date_to" label={f.dateTo.label} value={dateTo} onChange={setDateTo}
+              required={req(f.dateTo.need)} mark={dateFrom} markLabel={f.dateFrom.label} />
+          )}
+        </div>
       )}
       {f.times && (
         <fieldset className="task-times">

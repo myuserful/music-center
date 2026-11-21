@@ -70,7 +70,7 @@ export async function saveTask(fd: FormData) {
     title,
     due_date: str(fd, 'due_date') || null,
     description: str(fd, 'description'),
-    assignee: oneOf(str(fd, 'assignee'), ASSIGNEES) ?? 'both',
+    assignee: oneOf(str(fd, 'assignee'), ASSIGNEES) ?? 'management',
     status: oneOf(str(fd, 'status'), TASK_STATUSES) ?? 'todo',
     task_type: type,
     urgency: oneOf(str(fd, 'urgency'), URGENCIES) ?? 'normal',

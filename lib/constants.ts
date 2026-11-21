@@ -83,9 +83,14 @@ export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   done: 'הסתיים',
 };
 
-export type Assignee = 'yanky' | 'shevi' | 'both' | 'secretary';
-export const ASSIGNEES: Assignee[] = ['yanky', 'shevi', 'both', 'secretary'];
-export const ASSIGNEE_LABELS: Record<Assignee, string> = { yanky: 'יענקי', shevi: 'שבי', both: 'שניהם', secretary: 'מזכירה' };
+export type Assignee = 'manager' | 'manageress' | 'management' | 'secretary';
+export const ASSIGNEES: Assignee[] = ['manager', 'manageress', 'management', 'secretary'];
+export const ASSIGNEE_LABELS: Record<Assignee, string> = {
+  manager: 'מנהל', manageress: 'מנהלת', management: 'הנהלה', secretary: 'מזכירה',
+};
+/** הערכים הישנים (לפני 0066_task_assignees.sql) */
+const LEGACY_ASSIGNEE: Record<string, Assignee> = { yanky: 'manager', shevi: 'manageress', both: 'management' };
+export const normAssignee = (a: string): Assignee => LEGACY_ASSIGNEE[a] ?? (a as Assignee);
 
 /** סוג המשימה. לכל סוג שדות משלו (ראו TASK_TYPE_FIELDS ב-lib/tasks.ts) */
 export type TaskType =
@@ -107,6 +112,10 @@ export const TASK_TYPE_LABELS: Record<TaskType, string> = {
   payment: 'תשלום / גבייה',
   health_fund: 'קופת חולים / התחייבות',
 };
+/** משימות שיבוץ: הכי דחופות, ובוחרים בהן תאריכים בלוח שנה */
+export const SCHEDULING_TASK_TYPES: TaskType[] = [
+  'schedule_change', 'teacher_absent', 'student_move', 'student_absent', 'makeup_lesson',
+];
 export const TASK_TYPE_ICONS: Record<TaskType, string> = {
   admin: '📋', schedule_change: '🕑', teacher_absent: '🚫', student_move: '↔', student_absent: '✋',
   makeup_lesson: '🔁', notify_parents: '📣', call_teacher: '☎', payment: '₪', health_fund: '✚',

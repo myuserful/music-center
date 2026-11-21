@@ -2,7 +2,7 @@
  * משימות: השדות של כל סוג, סדר העדיפויות ומי רואה מה.
  * קובץ בלי קוד שרת, כדי שגם הלוח והטופס (בדפדפן) ישתמשו בו.
  */
-import type { Assignee, TaskType, Urgency } from './constants';
+import { SCHEDULING_TASK_TYPES, type Assignee, type TaskType, type Urgency } from './constants';
 import type { Role } from './roles';
 import type { Task } from './types';
 
@@ -73,12 +73,8 @@ function dateScore(days: number | null): number {
 
 const URGENCY_SCORE: Record<Urgency, number> = { high: 60, normal: 0, low: -30 };
 
-/** שינוי במערכת השעות הכי דחוף, ואחריו משימות שקשורות לשיעור ביום מסוים */
-const TYPE_SCORE: Record<TaskType, number> = {
-  schedule_change: 40,
-  teacher_absent: 20, student_move: 20, student_absent: 20, makeup_lesson: 20,
-  notify_parents: 0, call_teacher: 0, payment: 0, health_fund: 0, admin: 0,
-};
+/** משימות שיבוץ (שינוי במערכת, מורה / תלמיד לא מגיע, העברת שיעור, השלמה) הכי דחופות */
+const typeScore = (t: TaskType) => (SCHEDULING_TASK_TYPES.includes(t) ? 40 : 0);
 
 /**
  * ניקוד עדיפות: התאריך (הכי חשוב), הדחיפות והסוג.
@@ -87,7 +83,7 @@ const TYPE_SCORE: Record<TaskType, number> = {
 export function priorityScore(t: Prioritized, today: string): number {
   if (t.status === 'done') return -1000;
   const d = taskDate(t);
-  return dateScore(d == null ? null : daysUntil(d, today)) + URGENCY_SCORE[urgencyOf(t)] + TYPE_SCORE[typeOf(t)];
+  return dateScore(d == null ? null : daysUntil(d, today)) + URGENCY_SCORE[urgencyOf(t)] + typeScore(typeOf(t));
 }
 
 /** מיון לפי עדיפות: ניקוד, ואז התאריך המוקדם, ואז הסדר הידני */
@@ -134,7 +130,22 @@ export function canDeleteTask(t: Pick<Task, 'created_by'>, role: Role | null, us
 }
 
 /** האחראים שמופיעים בסינון בלוח */
-export const FILTER_ASSIGNEES: Assignee[] = ['yanky', 'shevi', 'secretary'];
+export const FILTER_ASSIGNEES: Assignee[] = ['manager', 'manageress', 'management', 'secretary'];
+
+/** סינון לפי אחראי: מנהל ומנהלת רואים גם את המשימות של ההנהלה */
+export function matchesAssignee(t: Pick<Task, 'assignee'>, who: Assignee | ''): boolean {
+  if (!who) return true;
+  return t.assignee === who || (t.assignee === 'management' && (who === 'manager' || who === 'manageress'));
+}
+
+/**
+ * סינון לפי טווח תאריכים (from / to, כל אחד יכול להיות ריק):
+ * משימה נכנסת אם אחד התאריכים שלה (דד ליין, מיום, ליום) בטווח. משימה בלי תאריכים לא נכנסת.
+ */
+export function inDateRange(t: Pick<Task, 'due_date' | 'date_from' | 'date_to'>, from: string, to: string): boolean {
+  if (!from && !to) return true;
+  return [t.due_date, t.date_from, t.date_to].some((d) => !!d && (!from || d >= from) && (!to || d <= to));
+}
 
 /** בדיקת שדות חובה לפי הסוג. מחזיר הודעת שגיאה או null */
 export function missingField(
