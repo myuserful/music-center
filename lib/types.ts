@@ -1,6 +1,6 @@
 import type {
   Assignee, Attendance, ChargeKind, CheckStatus, Gender, HealthFund, Interest, PaymentMethod, PaymentTrack, Status, StudentStatus,
-  ReceiptField, TaskStatus, TeacherGender, TxKind, TxMethod,
+  ReceiptField, TaskStatus, TaskType, Urgency, TeacherGender, TxKind, TxMethod,
 } from './constants';
 import { DAYS } from './constants';
 import { hhmm } from './time';
@@ -85,8 +85,17 @@ export type Choir = {
 };
 export type Enrollment = { id: number; choir_id: number; student_id: number; status: Status };
 export type Task = {
-  id: number; title: string; due_date: string | null; kind: string; description: string;
+  id: number; title: string; due_date: string | null;
+  /** אופי המשימה (טקסט חופשי, מלפני הסוגים). נשאר רק לתצוגה של משימות ישנות */
+  kind: string; description: string;
   assignee: Assignee; status: TaskStatus; position: number; created_at: string;
+  /** מ-0065: סוג, דחיפות והשדות של הסוג (לפני 0065: חסרים) */
+  task_type?: TaskType; urgency?: Urgency;
+  teacher_id?: number | null; student_id?: number | null;
+  date_from?: string | null; date_to?: string | null;
+  time_from?: string | null; time_to?: string | null;
+  amount?: number | null;
+  created_by?: string | null;
 };
 
 export type Transaction = {

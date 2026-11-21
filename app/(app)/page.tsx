@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { HotTasks } from '@/components/HotTasks';
 import { Empty, Flash, one, PageHead, type SP } from '@/components/ui';
 import { ageFrom } from '@/lib/age';
 import {
@@ -11,6 +12,7 @@ import { redirect } from 'next/navigation';
 import { SCREENS } from '@/lib/permissions';
 import { getPermissions } from '@/lib/roles';
 import { createClient } from '@/lib/supabase/server';
+import { loadTasks } from '@/lib/taskData';
 import { toMin } from '@/lib/time';
 import { fullName, requestedInstrumentIds, type Student } from '@/lib/types';
 
@@ -52,8 +54,12 @@ export default async function Dashboard({ searchParams }: { searchParams: SP }) 
   const db = await createClient();
   // ימים שלא נסגרו ביד נסגרים 24 שעות אחרי שנגמרו (לפני שמחשבים)
   await autoLockOverdue(db);
-  const all = await loadAll(db);
+  const [all, { tasks }] = await Promise.all([
+    loadAll(db),
+    perms.has('tasks') ? loadTasks(db, { openOnly: true }) : { tasks: [] },
+  ]);
   const { maps } = all;
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
 
   const current = all.students.filter((s) => s.status !== 'inactive'); // פעילים + מתלבטים
   const activeTeachers = all.teachers.filter((t) => t.active);
@@ -152,6 +158,7 @@ export default async function Dashboard({ searchParams }: { searchParams: SP }) 
     <>
       <PageHead title="מסך ראשי" sub="תמונת מצב: תלמידים, מורים, כלים וקופות" />
       <Flash sp={sp} />
+      <HotTasks tasks={tasks} today={today} />
 
       <div className="grid grid-4 dash-tiles">
         <Link href="/students" className="stat stat-undecided">

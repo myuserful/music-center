@@ -31,6 +31,14 @@ export const getRole = cache(async (): Promise<Role | null> => {
   return (data?.role as Role | undefined) ?? null;
 });
 
+/** המזהה של המשתמש המחובר (null בעבודה מקומית בלי התחברות) */
+export const getUserId = cache(async (): Promise<string | null> => {
+  if (LOCAL_NO_AUTH) return null;
+  const db = await createClient();
+  const { data } = await db.auth.getClaims();
+  return data?.claims.sub ?? null;
+});
+
 export class ForbiddenError extends Error {
   constructor() {
     super('אין הרשאה לפעולה הזו');

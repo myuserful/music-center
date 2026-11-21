@@ -83,12 +83,34 @@ export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   done: 'הסתיים',
 };
 
-export type Assignee = 'yanky' | 'shevi' | 'both';
-export const ASSIGNEES: Assignee[] = ['yanky', 'shevi', 'both'];
-export const ASSIGNEE_LABELS: Record<Assignee, string> = { yanky: 'יענקי', shevi: 'שבי', both: 'שניהם' };
+export type Assignee = 'yanky' | 'shevi' | 'both' | 'secretary';
+export const ASSIGNEES: Assignee[] = ['yanky', 'shevi', 'both', 'secretary'];
+export const ASSIGNEE_LABELS: Record<Assignee, string> = { yanky: 'יענקי', shevi: 'שבי', both: 'שניהם', secretary: 'מזכירה' };
 
-/** הצעות לאופי המשימה. אפשר גם להקליד ערך אחר */
-export const TASK_KINDS = ['שיבוץ', 'טלפון להורים', 'מורים', 'תשלומים', 'קופות חולים', 'מנהלה', 'אחר'];
+/** סוג המשימה. לכל סוג שדות משלו (ראו TASK_TYPE_FIELDS ב-lib/tasks.ts) */
+export type TaskType =
+  | 'schedule_change' | 'teacher_absent' | 'student_move' | 'student_absent' | 'makeup_lesson'
+  | 'notify_parents' | 'call_teacher' | 'payment' | 'health_fund' | 'admin';
+export const TASK_TYPES: TaskType[] = [
+  'admin', 'schedule_change', 'teacher_absent', 'student_move', 'student_absent', 'makeup_lesson',
+  'notify_parents', 'call_teacher', 'payment', 'health_fund',
+];
+export const TASK_TYPE_LABELS: Record<TaskType, string> = {
+  admin: 'משימה מנהלית',
+  schedule_change: 'שינוי במערכת השעות',
+  teacher_absent: 'מורה לא יכול/ה להגיע',
+  student_move: 'תלמיד/ה מבקש/ת להעביר שיעור',
+  student_absent: 'תלמיד/ה לא יכול/ה להגיע',
+  makeup_lesson: 'שיעור השלמה',
+  notify_parents: 'להודיע לתלמיד/ה או להורים',
+  call_teacher: 'להתקשר למורה',
+  payment: 'תשלום / גבייה',
+  health_fund: 'קופת חולים / התחייבות',
+};
+export const TASK_TYPE_ICONS: Record<TaskType, string> = {
+  admin: '📋', schedule_change: '🕑', teacher_absent: '🚫', student_move: '↔', student_absent: '✋',
+  makeup_lesson: '🔁', notify_parents: '📣', call_teacher: '☎', payment: '₪', health_fund: '✚',
+};
 
 // ---- תשלומים ----
 export type PaymentTrack = 'private' | 'maccabi_full' | 'maccabi_split' | 'fund_deposit' | 'fund_commitment' | 'trial' | 'unknown';

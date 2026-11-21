@@ -618,6 +618,26 @@ tr.inactive td { opacity: 0.5; }
 .task-who-yanky { background: var(--blue-soft); color: var(--blue); }
 .task-who-shevi { background: var(--coral-soft); color: #b8432f; }
 .task-who-both { background: var(--mint-soft); color: var(--mint-dark); }
+.task-who-secretary { background: var(--yellow-soft); color: var(--yellow-dark); }
+.task-hint { display: block; font-size: 0.78rem; color: var(--muted); font-weight: 400; margin-top: 4px; }
+.task-times { border: 0; padding: 0; margin: 0; display: flex; gap: 12px; flex-wrap: wrap; }
+.task-times legend { font-weight: 500; font-size: 0.88rem; padding: 0; margin-bottom: 6px; }
+.task-type { background: var(--bg); color: var(--ink); font-weight: 500; }
+.task-type-schedule_change { background: var(--coral-soft); color: #b8432f; }
+.task-people { margin: 4px 0 0; font-size: 0.82rem; font-weight: 500; color: var(--ink); }
+.task-due.soon { color: var(--pending); }
+.task-card.task-hot { border-inline-start: 4px solid var(--danger); }
+.kanban-done .task-card.task-hot { border-inline-start: 0; }
+.task-context p { margin: 0 0 6px; }
+.task-lessons { margin: 4px 0 0; padding-inline-start: 20px; }
+.task-phone a { direction: ltr; unicode-bidi: isolate; }
+.hot-tasks { border: 2px solid var(--danger); margin-bottom: 18px; }
+.hot-tasks h2 { color: var(--danger); }
+.hot-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.hot-item { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 8px; background: var(--bg); }
+.hot-item.late { background: var(--danger-bg); }
+.hot-title { font-weight: 600; color: var(--ink); flex: 1 1 200px; }
+.hot-icon { width: 1.4em; text-align: center; }
 
 /* ---- טלפונים להורים ---- */
 .kanban-calls { grid-template-columns: repeat(4, minmax(0, 1fr)); }

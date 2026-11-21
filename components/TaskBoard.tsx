@@ -4,32 +4,48 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
 import { moveTask } from '@/lib/actions/tasks';
-import { ASSIGNEE_LABELS, ASSIGNEES, TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus } from '@/lib/constants';
+import {
+  ASSIGNEE_LABELS, TASK_STATUS_LABELS, TASK_STATUSES, TASK_TYPE_ICONS, TASK_TYPE_LABELS, TASK_TYPES, URGENCY_LABELS,
+  type TaskStatus,
+} from '@/lib/constants';
+import { byPriority, dueLabel, FILTER_ASSIGNEES, isHot, taskDate, typeOf, urgencyOf } from '@/lib/tasks';
+import { hhmm } from '@/lib/time';
 import type { Task } from '@/lib/types';
 
 const byPosition = (a: Task, b: Task) => a.position - b.position || a.id - b.id;
 
-function dueLabel(due: string | null, today: string) {
-  if (!due) return null;
-  const [y, m, d] = due.split('-');
-  const text = `${d}/${m}/${y.slice(2)}`;
-  if (due < today) return { text: `באיחור · ${text}`, cls: 'late' };
-  if (due === today) return { text: `היום · ${text}`, cls: 'today' };
-  return { text, cls: '' };
-}
+type SortMode = 'priority' | 'manual';
+const SORT_KEY = 'tasks-sort';
 
-export function TaskBoard({ tasks: initial, today }: { tasks: Task[]; today: string }) {
+/** שמות לפי מזהה, להצגת המורה / התלמיד/ה בכרטיס */
+export type TaskNames = { teachers: Record<number, string>; students: Record<number, string> };
+
+export function TaskBoard({ tasks: initial, today, names }: { tasks: Task[]; today: string; names: TaskNames }) {
   const router = useRouter();
   const [tasks, setTasks] = useState(initial);
   const [dragId, setDragId] = useState<number | null>(null);
   const [over, setOver] = useState<{ status: TaskStatus; before: number | null } | null>(null);
   const [who, setWho] = useState('');
+  const [type, setType] = useState('');
+  const [sort, setSort] = useState<SortMode>('priority');
   const [error, setError] = useState('');
   const [, startTransition] = useTransition();
 
   useEffect(() => setTasks(initial), [initial]);
+  useEffect(() => {
+    try { if (localStorage.getItem(SORT_KEY) === 'manual') setSort('manual'); } catch { /* אין גישה לאחסון */ }
+  }, []);
+  function changeSort(mode: SortMode) {
+    setSort(mode);
+    try { localStorage.setItem(SORT_KEY, mode); } catch { /* אין גישה לאחסון */ }
+  }
 
-  const visible = tasks.filter((t) => !who || t.assignee === who || t.assignee === 'both');
+  const visible = tasks.filter((t) =>
+    (!who || t.assignee === who || (t.assignee === 'both' && (who === 'yanky' || who === 'shevi'))) &&
+    (!type || typeOf(t) === type));
+  // "הסתיים" תמיד בסדר הידני. בשאר העמודות: לפי עדיפות, או ידני
+  const sortFor = (status: TaskStatus) => (sort === 'priority' && status !== 'done' ? byPriority(today) : byPosition);
+  const manual = (status: TaskStatus) => sortFor(status) === byPosition;
 
   /** מעביר משימה לעמודה, לפני משימה מסוימת (או לסוף העמודה) */
   function place(id: number, status: TaskStatus, beforeId: number | null) {
@@ -66,18 +82,28 @@ export function TaskBoard({ tasks: initial, today }: { tasks: Task[]; today: str
       <div className="task-toolbar">
         <div className="task-who" role="group" aria-label="סינון לפי אחראי">
           <button type="button" className={`btn btn-xs ${who === '' ? 'btn-primary' : ''}`} onClick={() => setWho('')}>כולם</button>
-          {ASSIGNEES.filter((a) => a !== 'both').map((a) => (
+          {FILTER_ASSIGNEES.map((a) => (
             <button key={a} type="button" className={`btn btn-xs ${who === a ? 'btn-primary' : ''}`} onClick={() => setWho(a)}>
               {ASSIGNEE_LABELS[a]}
             </button>
           ))}
+        </div>
+        <select value={type} onChange={(e) => setType(e.target.value)} aria-label="סינון לפי סוג">
+          <option value="">כל הסוגים</option>
+          {TASK_TYPES.map((t) => <option key={t} value={t}>{TASK_TYPE_ICONS[t]} {TASK_TYPE_LABELS[t]}</option>)}
+        </select>
+        <div className="task-who" role="group" aria-label="סדר הכרטיסים">
+          <button type="button" className={`btn btn-xs ${sort === 'priority' ? 'btn-primary' : ''}`} onClick={() => changeSort('priority')}
+            title="הכי דחוף למעלה: לפי התאריך, הדחיפות והסוג">לפי עדיפות</button>
+          <button type="button" className={`btn btn-xs ${sort === 'manual' ? 'btn-primary' : ''}`} onClick={() => changeSort('manual')}
+            title="הסדר שקובעים בגרירה">סדר ידני</button>
         </div>
         {error && <span className="flash flash-error" role="alert">{error}</span>}
       </div>
 
       <div className="kanban">
         {TASK_STATUSES.map((status) => {
-          const column = visible.filter((t) => t.status === status).sort(byPosition);
+          const column = visible.filter((t) => t.status === status).sort(sortFor(status));
           const isOver = over?.status === status;
           return (
             <section
@@ -86,7 +112,7 @@ export function TaskBoard({ tasks: initial, today }: { tasks: Task[]; today: str
               onDragOver={(e) => {
                 if (dragId == null) return;
                 e.preventDefault();
-                if (e.target === e.currentTarget || !(e.target as HTMLElement).closest('.task-card')) {
+                if (!manual(status) || e.target === e.currentTarget || !(e.target as HTMLElement).closest('.task-card')) {
                   setOver({ status, before: null });
                 }
               }}
@@ -102,16 +128,23 @@ export function TaskBoard({ tasks: initial, today }: { tasks: Task[]; today: str
               <div className="kanban-cards">
                 {column.length === 0 && <p className="empty">גוררים לכאן משימות</p>}
                 {column.map((t) => {
-                  const due = status === 'done' ? null : dueLabel(t.due_date, today);
+                  const due = status === 'done' ? null : dueLabel(taskDate(t), today);
+                  const tt = typeOf(t);
+                  const urgency = urgencyOf(t);
+                  const hot = isHot(t, today);
+                  const people = [
+                    t.student_id ? names.students[t.student_id] : null,
+                    t.teacher_id ? names.teachers[t.teacher_id] : null,
+                  ].filter(Boolean).join(' · ');
                   return (
                     <article
                       key={t.id}
-                      className={`task-card ${dragId === t.id ? 'dragging' : ''} ${isOver && over?.before === t.id ? 'drop-before' : ''}`}
+                      className={`task-card ${hot ? 'task-hot' : ''} ${dragId === t.id ? 'dragging' : ''} ${isOver && over?.before === t.id ? 'drop-before' : ''}`}
                       draggable
                       onDragStart={(e) => { setDragId(t.id); e.dataTransfer.effectAllowed = 'move'; }}
                       onDragEnd={() => { setDragId(null); setOver(null); }}
                       onDragOver={(e) => {
-                        if (dragId == null) return;
+                        if (dragId == null || !manual(status)) return;
                         e.preventDefault();
                         // חצי עליון: לפני הכרטיס. חצי תחתון: לפני הכרטיס הבא
                         const r = e.currentTarget.getBoundingClientRect();
@@ -124,13 +157,15 @@ export function TaskBoard({ tasks: initial, today }: { tasks: Task[]; today: str
                         <Link href={`/tasks/${t.id}`} className="task-title" draggable={false}>{t.title}</Link>
                         <span className={`badge task-who-${t.assignee}`}>{ASSIGNEE_LABELS[t.assignee]}</span>
                       </div>
+                      {people && <p className="task-people">{people}</p>}
                       {t.description && <p className="task-desc">{t.description}</p>}
-                      {(t.kind || due) && (
-                        <div className="task-meta">
-                          {t.kind && <span className="badge badge-muted">{t.kind}</span>}
-                          {due && <span className={`task-due ${due.cls}`}>⏰ {due.text}</span>}
-                        </div>
-                      )}
+                      <div className="task-meta">
+                        <span className={`badge task-type task-type-${tt}`}>{TASK_TYPE_ICONS[tt]} {TASK_TYPE_LABELS[tt]}</span>
+                        {urgency !== 'normal' && <span className={`inquiry-urgency-tag urgency-${urgency}`}>{URGENCY_LABELS[urgency]}</span>}
+                        {t.kind && <span className="badge badge-muted">{t.kind}</span>}
+                        {due && <span className={`task-due ${due.cls}`}>⏰ {due.text}</span>}
+                        {t.time_from && <span className="task-due">🕑 {hhmm(t.time_from)}{t.time_to ? `–${hhmm(t.time_to)}` : ''}</span>}
+                      </div>
                       {/* העברה בלחיצה (גם בטלפון, בלי גרירה) */}
                       <div className="task-move">
                         {TASK_STATUSES.filter((s) => s !== status).map((s) => (
