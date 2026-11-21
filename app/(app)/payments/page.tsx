@@ -78,11 +78,18 @@ export default async function PaymentsPage({ searchParams }: { searchParams: SP 
     .filter((st) => st.payment_track === 'fund_commitment')
     .map((st) => {
       const a = accountOf.get(st.id);
-      return { student: st, refund: Math.max(0, a?.balance ?? 0), missing: a?.commitments.length ?? 0, phone: all.primaryContact(st.id)?.phone ?? '' };
+      return {
+        student: st, refund: Math.max(0, a?.balance ?? 0), missing: a?.commitments.length ?? 0, phone: all.primaryContact(st.id)?.phone ?? '',
+        received: a?.commitmentsReceived ?? 0, due: a?.commitmentsDue ?? 0, transferred: a?.commitmentsTransferred ?? 0,
+        toTransfer: a?.commitmentsToTransfer ?? 0, over: a?.commitmentsOverTransferred ?? 0,
+      };
     })
-    .filter((x) => x.student.status === 'active' || x.refund > 0 || x.missing > 0)
+    .filter((x) => x.student.status === 'active' || x.refund > 0 || x.missing > 0 || x.toTransfer > 0)
     .sort((x, y) => Number(!!x.student.commitment_notified_on) - Number(!!y.student.commitment_notified_on)
       || y.refund - x.refund || y.missing - x.missing);
+  // לאומית: מה להעביר לקופה (רק על שיעורים שכבר התקיימו ויש עליהם התחייבות)
+  const leumitTransfer = leumit.filter((x) => x.toTransfer > 0 || x.over > 0).sort((x, y) => y.toTransfer - x.toTransfer);
+  const leumitSum = (k: 'received' | 'due' | 'transferred' | 'toTransfer' | 'missing') => leumit.reduce((n, x) => n + x[k], 0);
   const standingDue = debtors.filter((x) => x.student!.standing_order);
   const pendingChecks = billing.payments.filter((p) => p.check_status === 'pending')
     .sort((a, b) => (a.check_date ?? '').localeCompare(b.check_date ?? ''));
@@ -222,10 +229,16 @@ export default async function PaymentsPage({ searchParams }: { searchParams: SP 
               מתקשרים להורים להודיע. מי ששילם פיקדון מקבל אותו בחזרה (כפתור &quot;החזר&quot; בכרטיס), ועל כל שיעור שהתקיים צריך להביא התחייבות.
               {' '}הודענו: {leumit.filter((x) => x.student.commitment_notified_on).length} מתוך {leumit.length}
               {' '}· להחזיר: {shekel(leumit.reduce((n, x) => n + x.refund, 0))}
-              {' '}· התחייבויות חסרות: {leumit.reduce((n, x) => n + x.missing, 0)}
             </p>
+            <div className="grid grid-4" style={{ marginBottom: 12 }}>
+              <div className="stat"><div className="stat-num">{leumitSum('received')}</div><div className="stat-label">ההורים הביאו</div></div>
+              <div className={`stat ${leumitSum('missing') ? 'stat-pending' : 'stat-free'}`}><div className="stat-num">{leumitSum('missing')}</div><div className="stat-label">חסרות מההורים</div></div>
+              <div className="stat"><div className="stat-num">{leumitSum('due')}</div><div className="stat-label">היה צריך כבר להעביר (שיעורים שהתקיימו) · הועברו {leumitSum('transferred')}</div></div>
+              <div className={`stat ${leumitSum('toTransfer') ? 'stat-pending' : 'stat-free'}`}><div className="stat-num">{leumitSum('toTransfer')}</div><div className="stat-label">להעביר ללאומית עכשיו</div></div>
+            </div>
+            <h3>1. מההורים</h3>
             <ul className="list">
-              {leumit.map(({ student: st, refund, missing, phone }) => (
+              {leumit.map(({ student: st, refund, missing, phone, received }) => (
                 <li key={st.id}>
                   <div>
                     <Link href={`/students/${st.id}#account`}>{fullName(st)}</Link>
@@ -233,6 +246,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: SP 
                       {phone && <a href={`tel:${phone}`} dir="ltr">{phone}</a>}
                       {phone && ' · '}
                       {missing ? `${missing} התחייבויות חסרות` : 'אין התחייבויות חסרות'}
+                      {received > 0 && ` · הביאו ${received}`}
                       {refund > 0 && ` · להחזיר ${shekel(refund)}`}
                     </div>
                   </div>
@@ -249,6 +263,24 @@ export default async function PaymentsPage({ searchParams }: { searchParams: SP 
                 </li>
               ))}
             </ul>
+            <h3>2. להעביר ללאומית</h3>
+            <p className="muted">רק על שיעורים שכבר התקיימו. רושמים את ההעברה בכרטיס התלמיד/ה (&quot;העברנו ללאומית&quot;)</p>
+            {leumitTransfer.length === 0 ? <Empty>אין מה להעביר כרגע</Empty> : (
+              <ul className="list">
+                {leumitTransfer.map(({ student: st, received, due, transferred, toTransfer, over }) => (
+                  <li key={st.id}>
+                    <div>
+                      <Link href={`/students/${st.id}#account`}>{fullName(st)}</Link>
+                      <div className="muted">
+                        הביאו {received} · היה צריך להעביר {due} · הועברו {transferred}
+                        {over > 0 && ` · הועברו ${over} יותר מדי`}
+                      </div>
+                    </div>
+                    {toTransfer > 0 && <strong>להעביר {toTransfer}</strong>}
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
         )}
 

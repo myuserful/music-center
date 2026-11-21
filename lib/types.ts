@@ -126,7 +126,11 @@ export type Charge = {
   description: string; amount: number; due_date: string; commitment_on: string | null; commitment_ref: string;
 };
 /** לאומית: התחייבויות שההורים הביאו (0062). כל התחייבות מכסה שיעור אחד, לפי הסדר */
-export type FundCommitment = { id: number; student_id: number; received_on: string; ref: string; count: number; notes: string };
+export type FundCommitment = {
+  id: number; student_id: number; received_on: string; ref: string; count: number; notes: string;
+  /** כמה מתוכן כבר הועברו לקופה, ומתי בפעם האחרונה (0067: לפני כן חסר) */
+  transferred?: number; transferred_on?: string | null;
+};
 export type Payment = {
   id: number; student_id: number; paid_on: string; amount: number; method: PaymentMethod; reference: string;
   check_number: string; check_bank: string; check_date: string | null; check_status: CheckStatus | null; notes: string;

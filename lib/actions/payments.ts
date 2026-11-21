@@ -201,6 +201,50 @@ export async function deleteFundCommitment(fd: FormData) {
   done(back, 'ההתחייבויות נמחקו');
 }
 
+const TRANSFER_MIGRATION = 'צריך להריץ את 0067_commitment_transfers.sql ב-Supabase';
+const transferError = (e: { code?: string; message: string }) =>
+  e.code === 'PGRST204' || e.code === '42703' ? TRANSFER_MIGRATION : dbMessage(e);
+
+/** לאומית: כמה התחייבויות מתוך קבוצה אחת (שהתקבלה באותו יום) כבר הועברו לקופה */
+export async function setCommitmentTransferred(fd: FormData) {
+  const db = await createClient();
+  const back = backTo(fd, HOME);
+  const id = num(fd, 'id')!;
+  const n = num(fd, 'transferred');
+  const { data: row, error: e1 } = await db.from('fund_commitments').select('count').eq('id', id).single();
+  if (e1 || !row) fail(back, e1 ? dbMessage(e1) : 'ההתחייבויות לא נמצאו');
+  if (n === null || n < 0 || !Number.isInteger(n) || n > Number(row!.count)) fail(back, `אפשר להעביר בין 0 ל-${row!.count}`);
+  const { error } = await db.from('fund_commitments').update({ transferred: n, transferred_on: n ? today() : null }).eq('id', id);
+  if (error) fail(back, transferError(error));
+  done(back, n ? `נשמר: הועברו ${n} מתוך ${row!.count}` : 'ההעברה בוטלה');
+}
+
+/** לאומית: העברנו לקופה כמה התחייבויות - נרשמות על הקבוצות מהישנה לחדשה */
+export async function transferCommitments(fd: FormData) {
+  const db = await createClient();
+  const studentId = num(fd, 'student_id')!;
+  const back = backTo(fd, `/students/${studentId}#account`);
+  const asked = num(fd, 'count') ?? 0;
+  if (asked < 1 || !Number.isInteger(asked)) fail(back, 'יש למלא כמה התחייבויות הועברו');
+  let left = asked;
+  const { data, error: e1 } = await db.from('fund_commitments').select('*').eq('student_id', studentId).order('received_on').order('id');
+  if (e1) fail(back, dbMessage(e1));
+  const rows = (data ?? []) as { id: number; count: number; transferred?: number }[];
+  if (rows.length && rows[0].transferred === undefined) fail(back, TRANSFER_MIGRATION);
+  for (const r of rows) {
+    if (left <= 0) break;
+    const free = Number(r.count) - Number(r.transferred ?? 0);
+    if (free <= 0) continue;
+    const take = Math.min(free, left);
+    const { error } = await db.from('fund_commitments')
+      .update({ transferred: Number(r.transferred ?? 0) + take, transferred_on: today() }).eq('id', r.id);
+    if (error) fail(back, transferError(error));
+    left -= take;
+  }
+  if (left > 0) fail(back, `נרשמו ${asked - left} בלבד: אין עוד התחייבויות שההורים הביאו ועוד לא הועברו`);
+  done(back, `נרשם שהועברו ${asked} התחייבויות`);
+}
+
 /** לאומית: סימון שהתקשרנו להורים והודענו על המעבר להתחייבויות (on=0 מבטל) */
 export async function setCommitmentNotified(fd: FormData) {
   const db = await createClient();

@@ -3,8 +3,8 @@ import { DeletePaymentButton } from '@/components/DeletePaymentButton';
 import { PaymentFields } from '@/components/PaymentFields';
 import { Empty } from '@/components/ui';
 import {
-  addCharge, addFundCommitment, addLessonCharge, addManualReceipt, addPayment, deleteCharge, deleteFundCommitment, deleteReceipt, issueInternal, issueReceipt, markCommitment, stopAfterTrial,
-  undoCommitment,
+  addCharge, addFundCommitment, addLessonCharge, addManualReceipt, addPayment, deleteCharge, deleteFundCommitment, deleteReceipt, issueInternal, issueReceipt, markCommitment, setCommitmentTransferred, stopAfterTrial,
+  transferCommitments, undoCommitment,
 } from '@/lib/actions/payments';
 import {
   account, chargesForLesson, maccabiPart, monthLabel, monthRequest, paymentCoverage, shekel, SIBLING_CYCLE, SIBLING_DEFAULT_AMOUNT, SIBLING_TRACKS, siblingCounted,
@@ -133,9 +133,18 @@ export function StudentAccount({
           <div className={`stat ${a.commitments.length > 0 ? 'stat-pending' : 'stat-free'}`}>
             <div className="stat-num">{a.commitments.length > 0 ? a.commitments.length : a.commitmentsSurplus}</div>
             <div className="stat-label">
-              {a.commitments.length > 0 ? 'התחייבויות חסרות (שיעור אחד = התחייבות אחת)' : 'התחייבויות בעודף לשיעורים הבאים'}
-              {` · התקבלו ${a.commitmentsReceived}`}
+              {a.commitments.length > 0 ? 'התחייבויות חסרות מההורים (שיעור אחד = התחייבות אחת)' : 'התחייבויות בעודף לשיעורים הבאים'}
+              {` · ההורים הביאו ${a.commitmentsReceived}`}
               {commitmentTrack && (student.commitment_notified_on ? ` · הודענו להורים ב-${dmy(student.commitment_notified_on)}` : ' · עוד לא הודענו להורים')}
+            </div>
+          </div>
+        )}
+        {(commitmentTrack || a.commitmentsReceived > 0) && (
+          <div className={`stat ${a.commitmentsToTransfer > 0 ? 'stat-pending' : 'stat-free'}`}>
+            <div className="stat-num">{a.commitmentsToTransfer}</div>
+            <div className="stat-label">
+              להעביר ללאומית עכשיו · היה צריך להעביר {a.commitmentsDue} (שיעורים שהתקיימו) · הועברו {a.commitmentsTransferred}
+              {a.commitmentsOverTransferred > 0 && ` · הועברו ${a.commitmentsOverTransferred} יותר מדי`}
             </div>
           </div>
         )}
@@ -192,6 +201,7 @@ export function StudentAccount({
       {(commitmentTrack || a.commitments.length > 0 || commitments.length > 0) && (
         <div className="deposit-box">
           <h3>התחייבויות</h3>
+          <h4>1. מה ההורים הביאו</h4>
           <p className="muted">
             בלאומית לא משלמים פיקדון: כל התחייבות מכסה שיעור אחד, מהשיעור הראשון והלאה. אפשר להכניס כמה ביחד,
             והעודף מכסה אוטומטית את השיעורים הבאים.
@@ -214,7 +224,25 @@ export function StudentAccount({
                   <div>
                     <strong>{fc.count} התחייבויות</strong> · {dmy(fc.received_on)}
                     {fc.ref && <span className="muted" dir="ltr"> · {fc.ref}</span>}
+                    <div className="muted">
+                      הועברו ללאומית {fc.transferred ?? 0} מתוך {fc.count}
+                      {fc.transferred_on && ` · ${dmy(fc.transferred_on)}`}
+                    </div>
                   </div>
+                  <form action={setCommitmentTransferred} className="row-form">
+                    <input type="hidden" name="id" value={fc.id} />
+                    <input type="hidden" name="back" value={here} />
+                    <label>הועברו<input name="transferred" type="number" min="0" max={fc.count} step="1" defaultValue={fc.transferred ?? 0} required style={{ width: 60 }} /></label>
+                    <button className="btn btn-xs btn-ghost">שמירה</button>
+                  </form>
+                  {(fc.transferred ?? 0) > 0 && (
+                    <form action={setCommitmentTransferred}>
+                      <input type="hidden" name="id" value={fc.id} />
+                      <input type="hidden" name="back" value={here} />
+                      <input type="hidden" name="transferred" value="0" />
+                      <ConfirmButton className="btn btn-xs btn-ghost" message={`לבטל את ההעברה של ${fc.transferred} ההתחייבויות מ-${dmy(fc.received_on)}? הן יחזרו להיות "להעביר"`}>ביטול העברה</ConfirmButton>
+                    </form>
+                  )}
                   <form action={deleteFundCommitment}>
                     <input type="hidden" name="id" value={fc.id} />
                     <input type="hidden" name="back" value={here} />
@@ -223,6 +251,22 @@ export function StudentAccount({
                 </li>
               ))}
             </ul>
+          )}
+
+          <h4>2. העברה ללאומית</h4>
+          <p className="muted">
+            מעבירים לקופה רק על שיעורים שכבר התקיימו. ההורים הביאו {a.commitmentsReceived},
+            היה צריך כבר להעביר {a.commitmentsDue}, הועברו {a.commitmentsTransferred}
+            {a.commitmentsToTransfer > 0 ? ` – להעביר עכשיו ${a.commitmentsToTransfer}.` : ' – אין מה להעביר עכשיו.'}
+            {a.commitmentsOverTransferred > 0 && ` שימו לב: הועברו ${a.commitmentsOverTransferred} על שיעורים שעוד לא התקיימו.`}
+          </p>
+          {a.commitmentsReceived > a.commitmentsTransferred && (
+            <form action={transferCommitments} className="row-form">
+              <input type="hidden" name="student_id" value={student.id} />
+              <input type="hidden" name="back" value={here} />
+              <label>כמה הועברו<input name="count" type="number" min="1" step="1" defaultValue={Math.max(1, a.commitmentsToTransfer)} required style={{ width: 70 }} /></label>
+              <button className="btn btn-xs btn-primary">+ העברנו ללאומית</button>
+            </form>
           )}
         </div>
       )}

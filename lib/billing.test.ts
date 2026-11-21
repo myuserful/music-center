@@ -395,6 +395,30 @@ describe('לאומית: התחייבויות לפי כמות', () => {
     expect(a.commitmentsSurplus).toBe(0);
   });
 
+  it('הביאו 4 בתחילת החודש, התקיים שיעור אחד: צריך להעביר 1, ואחרי שהעברנו - אין מה להעביר', () => {
+    const charges = [lesson('2026-11-03')];
+    const a = account(charges, [], '2026-11-05', [fc(4)]);
+    expect(a.commitmentsReceived).toBe(4);
+    expect(a.commitmentsDue).toBe(1);
+    expect(a.commitmentsToTransfer).toBe(1);
+    const b = account(charges, [], '2026-11-05', [{ ...fc(4), transferred: 1 }]);
+    expect(b.commitmentsTransferred).toBe(1);
+    expect(b.commitmentsToTransfer).toBe(0);
+    expect(b.commitmentsOverTransferred).toBe(0);
+  });
+
+  it('צריך להעביר רק שיעורים שיש עליהם התחייבות; העברה מעבר לכך מסומנת', () => {
+    const charges = [lesson('2026-10-20'), lesson('2026-10-27'), lesson('2026-11-03')];
+    const a = account(charges, [], '2026-11-05', [{ ...fc(2), transferred: 2 }, fc(1)]);
+    expect(a.commitmentsDue).toBe(3);
+    expect(a.commitmentsToTransfer).toBe(1);
+    const few = account(charges, [], '2026-11-05', [{ ...fc(2), transferred: 2 }]);
+    expect(few.commitmentsDue).toBe(2);
+    expect(few.commitmentsToTransfer).toBe(0);
+    const over = account([lesson('2026-11-03')], [], '2026-11-05', [{ ...fc(4), transferred: 3 }]);
+    expect(over.commitmentsOverTransferred).toBe(2);
+  });
+
   it('שיעור חדש אחרי שיש עודף מכוסה אוטומטית', () => {
     const a = account([lesson('2026-10-20'), lesson('2026-11-10')], [], '2026-11-10', [fc(2)]);
     expect(a.commitments).toHaveLength(0);

@@ -213,6 +213,10 @@ export function account(charges: Charge[], payments: Payment[], today: string, c
   const waiting = charges.filter((c) => c.kind === 'commitment' && !c.commitment_on)
     .sort((x, y) => x.lesson_date.localeCompare(y.lesson_date) || x.id - y.id);
   const coveredByCommitment = new Set(waiting.slice(0, received).map((c) => c.id));
+  // מעבירים לקופה רק על שיעורים שכבר התקיימו ויש עליהם התחייבות (ההורים יכולים להביא מראש לשיעורים הבאים)
+  const commitmentsDue = charges.filter((c) => c.kind === 'commitment' && c.lesson_date <= today
+    && (c.commitment_on || coveredByCommitment.has(c.id))).length;
+  const transferred = commitments.reduce((n, c) => n + Number(c.transferred ?? 0), 0);
   const sorted = [...charges].sort((a, b) => a.due_date.localeCompare(b.due_date) || a.id - b.id);
   const lines: ChargeLine[] = sorted.map((c) => {
     const amount = effectiveAmount(c);
@@ -259,6 +263,14 @@ export function account(charges: Charge[], payments: Payment[], today: string, c
     commitmentsReceived: received + charges.filter((c) => c.kind === 'commitment' && c.commitment_on).length,
     /** התחייבויות בעודף: יכסו את השיעורים הבאים */
     commitmentsSurplus: Math.max(0, received - waiting.length),
+    /** כמה התחייבויות היה צריך כבר להעביר לקופה: רק על שיעורים שכבר התקיימו ויש עליהם התחייבות */
+    commitmentsDue,
+    /** כמה התחייבויות כבר הועברו לקופה */
+    commitmentsTransferred: transferred,
+    /** להעביר עכשיו: היה צריך להעביר, ועוד לא הועברו */
+    commitmentsToTransfer: Math.max(0, commitmentsDue - transferred),
+    /** הועברו יותר ממה שהיה צריך (על שיעורים שעוד לא התקיימו) */
+    commitmentsOverTransferred: Math.max(0, transferred - commitmentsDue),
   };
 }
 
