@@ -34,11 +34,13 @@ async function render(date: string, teacherId: number | null, edited?: { rows: D
   const [all, day] = await Promise.all([loadAll(db), loadDay(db, date)]);
   const { maps } = all;
   const when = `יום ${DAYS[weekdayOf(date)]} ${dmy(date)}`;
+  // יום שנסגר סופית: רק מה שנשמר בו, לא לפי מערכת השעות של היום
+  const locked = !!day.lock && !day.lock.unlocked_at;
   const contacts = (studentId: number) => all.contacts.filter((c) => c.student_id === studentId);
 
   const section = (id: number): PdfSection<DayRow> => {
     const teacher = maps.teacher.get(id)!;
-    const closed = day.closures.some((c) => c.teacher_id === id);
+    const closed = locked || day.closures.some((c) => c.teacher_id === id);
     const rows = edited && id === teacherId
       ? [...edited.rows].sort((a, b) => (a.start_time ?? '99:99').localeCompare(b.start_time ?? '99:99'))
       : dayRows(day.lessons, all.lessons, id, date, closed).rows;
@@ -67,7 +69,7 @@ async function render(date: string, teacherId: number | null, edited?: { rows: D
     return pdfSectionsResponse(s.title, [s], { inline: true });
   }
 
-  const sections = [...dayTeacherIds(all.lessons, day.lessons, day.closures, date)]
+  const sections = [...dayTeacherIds(all.lessons, day.lessons, day.closures, date, locked)]
     .map((id) => maps.teacher.get(id)).filter((t) => t !== undefined)
     .sort((a, b) => fullName(a).localeCompare(fullName(b), 'he'))
     .map((t) => section(t.id))

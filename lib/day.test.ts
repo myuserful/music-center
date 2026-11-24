@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  addDays, attendedDates, dayRows, dayStats, hoursLabel, mobilePhone, moveRow, overdueDates, parseRows, scheduledRows, shortName, teacherDays,
+  addDays, attendedDates, dayRows, dayTeacherIds, dayStats, hoursLabel, mobilePhone, moveRow, overdueDates, parseRows, scheduledRows, shortName, teacherDays,
   unknownTrackStudents, weekdayOf,
   type DayRow,
 } from './day';
@@ -47,6 +47,13 @@ describe('day', () => {
     expect(dayRows(saved, lessons, 1, '2026-10-20', false).rows.map((r) => [r.student_id, r.substitute_id])).toEqual([[77, 4]]);
     expect(dayRows([], lessons, 1, '2026-10-20', false)).toMatchObject({ saved: false, rows: [{ lesson_id: 1 }] });
     expect(dayRows([], lessons, 1, '2026-10-20', true)).toEqual({ saved: true, rows: [] });
+  });
+
+  it('a locked day keeps only what was saved, not teachers added to the schedule later', () => {
+    const lessons = [lesson(1, 2, '17:00:00'), { ...lesson(2, 2, '17:00:00'), teacher_id: 8 }];
+    const saved = [{ teacher_id: 1 } as DayLesson];
+    expect([...dayTeacherIds(lessons, saved, [], '2026-10-20')].sort()).toEqual([1, 8]);
+    expect([...dayTeacherIds(lessons, saved, [], '2026-10-20', true)]).toEqual([1]);
   });
 
   it('parses form rows and rejects bad ones', () => {

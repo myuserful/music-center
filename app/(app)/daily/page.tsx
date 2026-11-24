@@ -31,13 +31,14 @@ export default async function DailyPage({ searchParams }: { searchParams: SP }) 
 
   const closedAt = new Map(day.closures.map((c) => [c.teacher_id, c.closed_at]));
   // מורים עם שיעורים קבועים ביום הזה, מי שכבר נשמר לו משהו, ומורה שהוסיפו ידנית
-  const teacherIds = dayTeacherIds(all.lessons, day.lessons, day.closures, date);
+  // ביום שנסגר סופית: בדיוק מה שהיה ברגע הסגירה, בלי שינויים שנעשו אחר כך במערכת השעות
+  const teacherIds = dayTeacherIds(all.lessons, day.lessons, day.closures, date, !!locked);
   if (added) teacherIds.add(added);
 
   const teachers: DayTeacher[] = [...teacherIds].map((id) => maps.teacher.get(id)!).filter(Boolean)
     .sort((a, b) => fullName(a).localeCompare(fullName(b), 'he'))
     .map((t) => {
-      const closed = closedAt.has(t.id);
+      const closed = !!locked || closedAt.has(t.id);
       const { rows, saved } = dayRows(day.lessons, all.lessons, t.id, date, closed);
       const hours = all.hours.filter((h) => h.teacher_id === t.id && h.weekday === weekday);
       return {

@@ -63,13 +63,16 @@ export function scheduledRows(lessons: Lesson[], teacherId: number, date: string
     .sort(byTime);
 }
 
-/** המורים של היום: מי שיש לו שיעורים קבועים ביום הזה בשבוע, ומי שכבר נשמר או נסגר לו היום */
+/**
+ * המורים של היום: מי שיש לו שיעורים קבועים ביום הזה בשבוע, ומי שכבר נשמר או נסגר לו היום.
+ * locked = היום נסגר סופית: רק מה שנשמר בו, בלי מערכת השעות של היום (מורים שנוספו למערכת אחרי הסגירה לא נכנסים)
+ */
 export function dayTeacherIds(
-  lessons: Lesson[], saved: DayLesson[], closures: { teacher_id: number }[], date: string,
+  lessons: Lesson[], saved: DayLesson[], closures: { teacher_id: number }[], date: string, locked = false,
 ): Set<number> {
   const weekday = weekdayOf(date);
   return new Set([
-    ...lessons.filter(isTimed).filter((l) => l.weekday === weekday).map((l) => l.teacher_id),
+    ...(locked ? [] : lessons.filter(isTimed).filter((l) => l.weekday === weekday).map((l) => l.teacher_id)),
     ...saved.map((d) => d.teacher_id),
     ...closures.map((c) => c.teacher_id),
   ]);
