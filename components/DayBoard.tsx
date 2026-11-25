@@ -30,9 +30,11 @@ type Props = {
   locked: boolean;
   /** אפשר להעביר תלמיד/ה ליום אחר (0052 הורצה) */
   canMove: boolean;
+  /** יום עתידי: אפשר לשמור, אבל לא לסגור (סגירה מחייבת את התלמידים) */
+  future: boolean;
 };
 
-export function DayBoard({ date, teachers, students, instruments, allTeachers, locked, canMove }: Props) {
+export function DayBoard({ date, teachers, students, instruments, allTeachers, locked, canMove, future }: Props) {
   const studentMap = useMemo(() => new Map(students.map((s) => [s.id, s])), [students]);
   const instrumentName = useMemo(() => new Map(instruments.map((i) => [i.id, i.name])), [instruments]);
   const teacherName = useMemo(() => new Map(allTeachers.map((t) => [t.id, t.name])), [allTeachers]);
@@ -44,7 +46,7 @@ export function DayBoard({ date, teachers, students, instruments, allTeachers, l
           key={`${t.id}:${t.closedAt}:${JSON.stringify(t.rows)}`}
           date={date} teacher={t} students={students} studentMap={studentMap}
           instruments={instruments} instrumentName={instrumentName}
-          allTeachers={allTeachers} teacherName={teacherName} locked={locked} canMove={canMove}
+          allTeachers={allTeachers} teacherName={teacherName} locked={locked} canMove={canMove} future={future}
         />
       ))}
     </div>
@@ -58,11 +60,11 @@ const fmtClosed = (iso: string) =>
   new Date(iso).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 function TeacherDay({
-  date, teacher: t, students, studentMap, instruments, instrumentName, allTeachers, teacherName, locked, canMove,
+  date, teacher: t, students, studentMap, instruments, instrumentName, allTeachers, teacherName, locked, canMove, future,
 }: {
   date: string; teacher: DayTeacher; students: DayStudent[]; studentMap: Map<number, DayStudent>;
   instruments: Named[]; instrumentName: Map<number, string>; allTeachers: Named[]; teacherName: Map<number, string>;
-  locked: boolean; canMove: boolean;
+  locked: boolean; canMove: boolean; future: boolean;
 }) {
   const [rows, setRows] = useState<Row[]>(() => t.rows.map((r) => ({ ...r, key: nextKey++ })));
   const [query, setQuery] = useState('');
@@ -371,8 +373,9 @@ function TeacherDay({
             {dirty && <span className="muted">יש שינויים שלא נשמרו</span>}
             <button className="btn" name="close" value="0">שמירה</button>
             <button
-              className="btn btn-primary" name="close" value="1" disabled={noTrack.length > 0}
-              title={noTrack.length ? 'קודם צריך לעדכן מסלול תשלום לתלמידים שמסומנים למעלה' : undefined}
+              className="btn btn-primary" name="close" value="1" disabled={future || noTrack.length > 0}
+              title={future ? 'אפשר לסגור את היום רק כשהוא מגיע (סגירה מחייבת את התלמידים)'
+                : noTrack.length ? 'קודם צריך לעדכן מסלול תשלום לתלמידים שמסומנים למעלה' : undefined}
             >
               סגירת יום ✓
             </button>

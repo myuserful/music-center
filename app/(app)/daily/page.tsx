@@ -164,6 +164,7 @@ export default async function DailyPage({ searchParams }: { searchParams: SP }) 
           date={date}
           locked={!!locked}
           canMove={!day.missingLock}
+          future={date > today}
           teachers={teachers}
           students={students}
           instruments={all.instruments.map((i) => ({ id: i.id, name: i.name }))}

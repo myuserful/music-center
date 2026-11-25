@@ -61,6 +61,8 @@ export async function saveDay(fd: FormData) {
   const rows = parseRows(str(fd, 'rows'), teacherId!);
   if (!rows) fail(to, 'השורות לא תקינות');
   const close = str(fd, 'close') === '1';
+  // סגירה מחייבת את התלמידים, אז לא סוגרים יום שעוד לא הגיע
+  if (close && date > israelToday()) fail(to, 'אי אפשר לסגור יום שעוד לא הגיע. אפשר לשמור, ולסגור ביום עצמו');
 
   const db = await createClient();
   if (await isLocked(db, date)) fail(to, LOCKED);
